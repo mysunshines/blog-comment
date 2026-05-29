@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package comment;
+
+option go_package = "github.com/mysunshines/blog-comment/proto/pb";
+
+// 错误码定义 (区间: 40000-49999)
+enum CommentErrorCode {
+    COMMENT_SUCCESS = 0;
+    COMMENT_NOT_FOUND = 40001;
+    COMMENT_CREATE_FAILED = 40011;
+    COMMENT_UPDATE_FAILED = 40012;
+    COMMENT_DELETE_FAILED = 40013;
+    COMMENT_LIST_FAILED = 40014;
+    COMMENT_ENABLE_FAILED = 40015;
+    COMMENT_DISABLE_FAILED = 40016;
+}
+
+service CommentService {
+    rpc CreateComment(CreateCommentRequest) returns (CreateCommentResponse);
+    rpc GetComment(GetCommentRequest) returns (GetCommentResponse);
+    rpc UpdateComment(UpdateCommentRequest) returns (UpdateCommentResponse);
+    rpc DeleteComment(DeleteCommentRequest) returns (DeleteCommentResponse);
+    rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
+    rpc GetArticleComments(GetArticleCommentsRequest) returns (GetArticleCommentsResponse);
+    rpc ReplyComment(ReplyCommentRequest) returns (ReplyCommentResponse);
+    rpc LikeComment(LikeCommentRequest) returns (LikeCommentResponse);
+    rpc GetCommentReplies(GetCommentRepliesRequest) returns (GetCommentRepliesResponse);
+    rpc EnableComment(EnableCommentRequest) returns (EnableCommentResponse);
+    rpc DisableComment(DisableCommentRequest) returns (DisableCommentResponse);
+}
+
+message Comment {
+    uint32 id = 1;
+    uint32 article_id = 2;
+    uint32 user_id = 3;
+    string username = 4;
+    string nickname = 5;
+    string avatar = 6;
+    uint32 parent_id = 7;
+    string content = 8;
+    uint32 like_count = 9;
+    uint32 reply_count = 10;
+    uint32 status = 11;
+    string created_at = 12;
+    string updated_at = 13;
+    repeated Comment replies = 14;
+}
+
+message CreateCommentRequest {
+    uint32 article_id = 1;
+    uint32 user_id = 2;
+    string content = 3;
+    uint32 parent_id = 4;
+}
+
+message CreateCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+    Comment comment = 3;
+}
+
+message GetCommentRequest {
+    uint32 comment_id = 1;
+}
+
+message GetCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+    Comment comment = 3;
+}
+
+message UpdateCommentRequest {
+    uint32 comment_id = 1;
+    uint32 user_id = 2;
+    string content = 3;
+}
+
+message UpdateCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+    Comment comment = 3;
+}
+
+message DeleteCommentRequest {
+    uint32 comment_id = 1;
+    uint32 user_id = 2;
+    uint32 is_admin = 3;
+}
+
+message DeleteCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+}
+
+message ListCommentsRequest {
+    uint32 page = 1;
+    uint32 page_size = 2;
+    uint32 user_id = 3;
+}
+
+message ListCommentsResponse {
+    uint32 code = 1;
+    string message = 2;
+    repeated Comment comments = 3;
+    uint32 total = 4;
+}
+
+message GetArticleCommentsRequest {
+    uint32 article_id = 1;
+    uint32 page = 2;
+    uint32 page_size = 3;
+    bool include_replies = 4;
+}
+
+message GetArticleCommentsResponse {
+    uint32 code = 1;
+    string message = 2;
+    repeated Comment comments = 3;
+    uint32 total = 4;
+    bool comment_enabled = 5;
+}
+
+message ReplyCommentRequest {
+    uint32 comment_id = 1;
+    uint32 user_id = 2;
+    string content = 3;
+}
+
+message ReplyCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+    Comment reply = 3;
+}
+
+message LikeCommentRequest {
+    uint32 comment_id = 1;
+    uint32 user_id = 2;
+}
+
+message LikeCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+    uint32 like_count = 3;
+}
+
+message GetCommentRepliesRequest {
+    uint32 comment_id = 1;
+    uint32 page = 2;
+    uint32 page_size = 3;
+}
+
+message GetCommentRepliesResponse {
+    uint32 code = 1;
+    string message = 2;
+    repeated Comment replies = 3;
+    uint32 total = 4;
+}
+
+message EnableCommentRequest {
+    uint32 article_id = 1;
+    uint32 user_id = 2;
+}
+
+message EnableCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+}
+
+message DisableCommentRequest {
+    uint32 article_id = 1;
+    uint32 user_id = 2;
+}
+
+message DisableCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+}
