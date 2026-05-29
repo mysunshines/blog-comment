@@ -13,6 +13,7 @@ all: build
 # 编译服务
 build:
 	@echo "Building $(SERVICE_NAME)..."
+	mkdir -p bin
 	go build -o bin/$(BINARY_NAME) $(SRC_DIR)/main.go
 
 # 运行服务
