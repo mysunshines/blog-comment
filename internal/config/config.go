@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	commonconfig "github.com/mysunshines/gocommon/config"
 	"gopkg.in/yaml.v3"
@@ -61,6 +62,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	setDefaults(&c)
+	applyEnvOverrides(&c)
 	globalConfig = &c
 	return &c, nil
 }
@@ -96,16 +98,16 @@ func setDefaults(c *Config) {
 		c.HTTP.Host = "0.0.0.0"
 	}
 	if c.HTTP.Port == 0 {
-		c.HTTP.Port = 8080
+		c.HTTP.Port = 8083
 	}
 	if c.GRPC.Host == "" {
 		c.GRPC.Host = "0.0.0.0"
 	}
 	if c.GRPC.Port == 0 {
-		c.GRPC.Port = 9000
+		c.GRPC.Port = 9003
 	}
 	if c.Metrics.Port == 0 {
-		c.Metrics.Port = 9090
+		c.Metrics.Port = 9093
 	}
 	if c.Metrics.Path == "" {
 		c.Metrics.Path = "/metrics"
@@ -121,5 +123,50 @@ func setDefaults(c *Config) {
 	}
 	if c.RateLimit.Burst == 0 {
 		c.RateLimit.Burst = 200
+	}
+}
+
+func applyEnvOverrides(c *Config) {
+	if v := os.Getenv("DB_HOST"); v != "" {
+		c.Database.Host = v
+	}
+	if v := os.Getenv("DB_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Database.Port = port
+		}
+	}
+	if v := os.Getenv("DB_USER"); v != "" {
+		c.Database.User = v
+	}
+	if v := os.Getenv("DB_PASSWORD"); v != "" {
+		c.Database.Password = v
+	}
+	if v := os.Getenv("DB_NAME"); v != "" {
+		c.Database.Name = v
+	}
+	if v := os.Getenv("REDIS_HOST"); v != "" {
+		c.Redis.Host = v
+	}
+	if v := os.Getenv("REDIS_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Redis.Port = port
+		}
+	}
+	if v := os.Getenv("CONSUL_ADDRESS"); v != "" {
+		c.Consul.Address = v
+	}
+	if v := os.Getenv("GRPC_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.GRPC.Port = port
+		}
+	}
+	// User Service (comment-service 依赖)
+	if v := os.Getenv("USER_SERVICE_HOST"); v != "" {
+		c.UserService.Host = v
+	}
+	if v := os.Getenv("USER_SERVICE_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.UserService.Port = port
+		}
 	}
 }

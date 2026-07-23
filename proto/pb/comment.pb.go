@@ -1683,7 +1683,7 @@ const file_comment_proto_rawDesc = "" +
 	"\vLikeComment\x12\x1b.comment.LikeCommentRequest\x1a\x1c.comment.LikeCommentResponse\x12Z\n" +
 	"\x11GetCommentReplies\x12!.comment.GetCommentRepliesRequest\x1a\".comment.GetCommentRepliesResponse\x12N\n" +
 	"\rEnableComment\x12\x1d.comment.EnableCommentRequest\x1a\x1e.comment.EnableCommentResponse\x12Q\n" +
-	"\x0eDisableComment\x12\x1e.comment.DisableCommentRequest\x1a\x1f.comment.DisableCommentResponseB\x1aZ\x18comment-service/proto/pbb\x06proto3"
+	"\x0eDisableComment\x12\x1e.comment.DisableCommentRequest\x1a\x1f.comment.DisableCommentResponseB.Z,github.com/mysunshines/blog-comment/proto/pbb\x06proto3"
 
 var (
 	file_comment_proto_rawDescOnce sync.Once

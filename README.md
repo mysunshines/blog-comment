@@ -1244,7 +1244,7 @@ db.Unscoped().Where("id = ?", id).Find(&comment)
 
 ## 十一、API SQL 与索引分析
 
-### 10.1 获取评论详情 (GetComment)
+### 11.1 获取评论详情 (GetComment)
 
 **执行的SQL**:
 ```sql
@@ -1257,7 +1257,7 @@ SELECT * FROM comments WHERE id = ? LIMIT 1
 
 ---
 
-### 10.2 获取文章评论列表 (GetArticleComments)
+### 11.2 获取文章评论列表 (GetArticleComments)
 
 **执行的SQL**:
 ```sql
@@ -1284,7 +1284,7 @@ ORDER BY created_at ASC
 
 ---
 
-### 10.3 获取评论回复 (GetCommentReplies)
+### 11.3 获取评论回复 (GetCommentReplies)
 
 **执行的SQL**:
 ```sql
@@ -1304,7 +1304,7 @@ LIMIT ? OFFSET ?
 
 ---
 
-### 10.4 创建评论 (CreateComment)
+### 11.4 创建评论 (CreateComment)
 
 **执行的SQL**:
 ```sql
@@ -1326,7 +1326,7 @@ UPDATE articles SET comment_count = comment_count + 1 WHERE id = ?
 
 ---
 
-### 10.5 更新评论 (UpdateComment)
+### 11.5 更新评论 (UpdateComment)
 
 **执行的SQL**:
 ```sql
@@ -1339,7 +1339,7 @@ UPDATE comments SET content = ? WHERE id = ? AND user_id = ?
 
 ---
 
-### 10.6 删除评论 (DeleteComment)
+### 11.6 删除评论 (DeleteComment)
 
 **执行的SQL**:
 ```sql
@@ -1365,7 +1365,7 @@ UPDATE articles SET comment_count = comment_count - 1 WHERE id = ?
 
 ---
 
-### 10.7 点赞评论 (LikeComment)
+### 11.7 点赞评论 (LikeComment)
 
 **执行的SQL**:
 ```sql
@@ -1387,7 +1387,7 @@ UPDATE comments SET like_count = like_count + 1 WHERE id = ?
 
 ---
 
-### 10.8 获取用户评论列表 (ListComments)
+### 11.8 获取用户评论列表 (ListComments)
 
 **执行的SQL**:
 ```sql
@@ -1406,7 +1406,7 @@ LIMIT ? OFFSET ?
 
 ---
 
-### 10.9 开启/关闭评论 (EnableComment/DisableComment)
+### 11.9 开启/关闭评论 (EnableComment/DisableComment)
 
 **执行的SQL**:
 ```sql

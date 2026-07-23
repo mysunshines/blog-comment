@@ -45,4 +45,4 @@ metrics:
 
 user_service:
   host: localhost
-  port: 9000
+  port: 9090

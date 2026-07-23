@@ -57,12 +57,7 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	db := common_database.GetDB()
 
-	// 自动迁移
-	if err := db.AutoMigrate(&model.Comment{}, &model.CommentLike{}, &model.Article{}, &model.User{}); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
-	}
-
-	// 初始化 Redis 缓存（设置 KeyPrefix 后直接传递）
+	// 初始化 Redis 缓存（必须在 AutoMigrate 之前，用于分布式锁）
 	redisCfg := cfg.Redis
 	redisCfg.KeyPrefix = constants.RedisKeyPrefixComment
 	if redisCfg.PoolSize == 0 {
@@ -70,6 +65,33 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	if err := cache.Init(&redisCfg); err != nil {
 		log.Warnf("Warning: Failed to init Redis: %v", err)
+	}
+
+	// 自动迁移（分布式锁保护，多实例只有一个执行）
+	const migrationLockKey = "migration:lock:comment_service"
+	const migrationLockTTL = 60 * time.Second
+	hostname, _ := os.Hostname()
+	instanceID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
+
+	acquired, err := cache.TryLock(context.Background(), migrationLockKey, instanceID, migrationLockTTL)
+	if err != nil {
+		log.Warnf("Failed to acquire migration lock (Redis unavailable): %v, proceeding without lock", err)
+	} else if acquired {
+		log.Infof("Migration lock acquired by instance %s", instanceID)
+		defer func() {
+			if unlockErr := cache.Unlock(context.Background(), migrationLockKey, instanceID); unlockErr != nil {
+				log.Warnf("Failed to release migration lock: %v", unlockErr)
+			}
+		}()
+	} else {
+		log.Info("Migration lock held by another instance, skipping AutoMigrate")
+		time.Sleep(2 * time.Second)
+	}
+
+	if acquired || err != nil {
+		if migrateErr := db.AutoMigrate(&model.Comment{}, &model.CommentLike{}, &model.Article{}, &model.User{}); migrateErr != nil {
+			log.Fatalf("Failed to migrate database: %v", migrateErr)
+		}
 	}
 
 	// 初始化限流器（类型别名，直接传递）
@@ -115,20 +137,26 @@ func NewServer(cfg *config.Config) *Server {
 }
 
 func initUserClient(cfg *config.Config) (user.UserServiceClient, error) {
-	// 高并发增强：gRPC 客户端选项
 	grpcOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		// 连接超时
-		grpc.WithBlock(),
-		grpc.WithTimeout(5 * time.Second),
+		// 使用默认服务配置，启用自动重连和 waitForReady
+		grpc.WithDefaultServiceConfig(`{
+			"loadBalancingPolicy": "round_robin",
+			"healthCheckConfig": {
+				"serviceName": ""
+			}
+		}`),
+		// Keepalive 参数：定期探测连接是否存活，断线自动重连
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second, // 10s 发送一次心跳
+			Timeout:             3 * time.Second,  // 心跳超时 3s
+			PermitWithoutStream: true,             // 无活动流也发心跳
+		}),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, cfg.UserService.Addr(), grpcOpts...)
+	conn, err := grpc.NewClient(cfg.UserService.Addr(), grpcOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect user service: %w", err)
+		return nil, fmt.Errorf("failed to create user service client: %w", err)
 	}
 	return user.NewUserServiceClient(conn), nil
 }
@@ -326,8 +354,12 @@ func (s *Server) runMetricsServer() {
 }
 
 func main() {
-	// 加载配置
-	cfg, err := config.Load(constants.DefaultConfigPath)
+	// 加载配置（支持 CONFIG_PATH 环境变量覆盖，与 user/article 服务保持一致）
+	configPath := os.Getenv(constants.EnvConfigPath)
+	if configPath == "" {
+		configPath = constants.DefaultConfigPath
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
