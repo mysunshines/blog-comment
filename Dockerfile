@@ -23,8 +23,13 @@ RUN protoc --go_out=. --go_opt=paths=source_relative \
     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
     proto/comment.proto
 
+# 版本号（docker build --build-arg GIT_VERSION=xxx 注入，默认 dev）
+ARG GIT_VERSION=dev
+
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o comment-service ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-X main.Version=${GIT_VERSION}" \
+    -o comment-service ./cmd/server
 
 # Final stage
 FROM alpine:latest
