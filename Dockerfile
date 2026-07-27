@@ -4,7 +4,7 @@ FROM golang:1.25.0-alpine AS builder
 WORKDIR /app
 
 # Install dependencies
-RUN apk add --no-cache git protobuf protobuf-dev
+RUN apk add --no-cache git ca-certificates
 
 # 容器内默认 GOPROXY 为 proxy.golang.org，国内网络通常不可达，
 # 显式设置为本机一致的国内镜像，避免 go mod download 失败。
@@ -17,11 +17,6 @@ RUN go mod download
 
 # Copy source code
 COPY . .
-
-# Generate proto code
-RUN protoc --go_out=. --go_opt=paths=source_relative \
-    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    proto/comment.proto
 
 # 版本号（docker build --build-arg GIT_VERSION=xxx 注入，默认 dev）
 ARG GIT_VERSION=dev
