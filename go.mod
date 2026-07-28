@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/mysunshines/blog-user v1.0.1
-	github.com/mysunshines/gocommon v1.0.1
+	github.com/mysunshines/gocommon v1.1.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sony/gobreaker v0.5.0
 	google.golang.org/grpc v1.80.0
