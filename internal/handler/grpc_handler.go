@@ -9,6 +9,7 @@ import (
 	comment "github.com/mysunshines/blog-comment/proto/pb"
 
 	"github.com/mysunshines/gocommon/constants"
+	"github.com/mysunshines/gocommon/middleware"
 
 	"github.com/sony/gobreaker"
 )
@@ -21,8 +22,12 @@ type GrpcCommentHandler struct {
 }
 
 func (h *GrpcCommentHandler) CreateComment(ctx context.Context, req *comment.CreateCommentRequest) (*comment.CreateCommentResponse, error) {
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	c, err := h.Svc.CreateComment(ctx, &model.CreateCommentRequest{
-		UserID:    uint(req.UserId),
+		UserID:    uid,
 		ArticleID: uint(req.ArticleId),
 		Content:   req.Content,
 		ParentID:  uint(req.ParentId),
@@ -71,8 +76,12 @@ func (h *GrpcCommentHandler) GetComment(ctx context.Context, req *comment.GetCom
 }
 
 func (h *GrpcCommentHandler) UpdateComment(ctx context.Context, req *comment.UpdateCommentRequest) (*comment.UpdateCommentResponse, error) {
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	c, err := h.Svc.UpdateComment(ctx, uint(req.CommentId), &model.UpdateCommentRequest{
-		UserID:  uint(req.UserId),
+		UserID:  uid,
 		Content: req.Content,
 	})
 
@@ -97,9 +106,13 @@ func (h *GrpcCommentHandler) UpdateComment(ctx context.Context, req *comment.Upd
 }
 
 func (h *GrpcCommentHandler) DeleteComment(ctx context.Context, req *comment.DeleteCommentRequest) (*comment.DeleteCommentResponse, error) {
-	err := h.Svc.DeleteComment(ctx, uint(req.CommentId), &model.DeleteCommentRequest{
-		UserID:  uint(req.UserId),
-		IsAdmin: uint(req.IsAdmin),
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = h.Svc.DeleteComment(ctx, uint(req.CommentId), &model.DeleteCommentRequest{
+		UserID:  uid,
+		IsAdmin: 0,
 	})
 
 	if err != nil {
@@ -186,8 +199,12 @@ func (h *GrpcCommentHandler) GetArticleComments(ctx context.Context, req *commen
 }
 
 func (h *GrpcCommentHandler) ReplyComment(ctx context.Context, req *comment.ReplyCommentRequest) (*comment.ReplyCommentResponse, error) {
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	reply, err := h.Svc.ReplyComment(ctx, uint(req.CommentId), &model.ReplyCommentRequest{
-		UserID:  uint(req.UserId),
+		UserID:  uid,
 		Content: req.Content,
 	})
 
@@ -212,8 +229,12 @@ func (h *GrpcCommentHandler) ReplyComment(ctx context.Context, req *comment.Repl
 }
 
 func (h *GrpcCommentHandler) LikeComment(ctx context.Context, req *comment.LikeCommentRequest) (*comment.LikeCommentResponse, error) {
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	likeCount, err := h.Svc.LikeComment(ctx, uint(req.CommentId), &model.LikeCommentRequest{
-		UserID: uint(req.UserId),
+		UserID: uid,
 	})
 
 	if err != nil {
@@ -264,8 +285,12 @@ func (h *GrpcCommentHandler) GetCommentReplies(ctx context.Context, req *comment
 }
 
 func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.EnableCommentRequest) (*comment.EnableCommentResponse, error) {
-	err := h.Svc.EnableComment(ctx, &model.EnableCommentRequest{
-		UserID:    uint(req.UserId),
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = h.Svc.EnableComment(ctx, &model.EnableCommentRequest{
+		UserID:    uid,
 		ArticleID: uint(req.ArticleId),
 	})
 
@@ -289,8 +314,12 @@ func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.Ena
 }
 
 func (h *GrpcCommentHandler) DisableComment(ctx context.Context, req *comment.DisableCommentRequest) (*comment.DisableCommentResponse, error) {
-	err := h.Svc.DisableComment(ctx, &model.DisableCommentRequest{
-		UserID:    uint(req.UserId),
+	uid, err := middleware.RequireGRPCAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = h.Svc.DisableComment(ctx, &model.DisableCommentRequest{
+		UserID:    uid,
 		ArticleID: uint(req.ArticleId),
 	})
 

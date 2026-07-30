@@ -24,6 +24,7 @@ import (
 	"github.com/mysunshines/gocommon/log"
 	"github.com/mysunshines/gocommon/metrics"
 	commonmiddleware "github.com/mysunshines/gocommon/middleware"
+	"github.com/mysunshines/gocommon/consul"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -71,31 +72,7 @@ func NewServer(cfg *config.Config) *Server {
 	}
 
 	// 自动迁移（分布式锁保护，多实例只有一个执行）
-	const migrationLockKey = "migration:lock:comment_service"
-	const migrationLockTTL = 60 * time.Second
-	hostname, _ := os.Hostname()
-	instanceID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
-
-	acquired, err := cache.TryLock(context.Background(), migrationLockKey, instanceID, migrationLockTTL)
-	if err != nil {
-		log.Warnf("Failed to acquire migration lock (Redis unavailable): %v, proceeding without lock", err)
-	} else if acquired {
-		log.Infof("Migration lock acquired by instance %s", instanceID)
-		defer func() {
-			if unlockErr := cache.Unlock(context.Background(), migrationLockKey, instanceID); unlockErr != nil {
-				log.Warnf("Failed to release migration lock: %v", unlockErr)
-			}
-		}()
-	} else {
-		log.Info("Migration lock held by another instance, skipping AutoMigrate")
-		time.Sleep(2 * time.Second)
-	}
-
-	if acquired || err != nil {
-		if migrateErr := db.AutoMigrate(&model.Comment{}, &model.CommentLike{}, &model.Article{}, &model.User{}); migrateErr != nil {
-			log.Fatalf("Failed to migrate database: %v", migrateErr)
-		}
-	}
+	runDBMigration(db, "migration:lock:comment_service", &model.Comment{}, &model.CommentLike{}, &model.Article{}, &model.User{})
 
 	// 初始化限流器（类型别名，直接传递）
 	commonmiddleware.InitRateLimiter(&cfg.RateLimit)
@@ -209,6 +186,9 @@ func (s *Server) runHTTPServer() {
 	router.Use(commonmiddleware.RecoveryMiddleware())
 	router.Use(commonmiddleware.LoggingMiddleware())
 	router.Use(commonmiddleware.CORSMiddleware())
+	// 限制请求体大小，防大请求体 DoS
+	router.Use(commonmiddleware.ValidateRequestMiddleware())
+	router.Use(commonmiddleware.CSRFMiddleware())
 	router.Use(commonmiddleware.MetricsMiddleware(constants.ServiceNameComment))
 	router.Use(commonmiddleware.TraceMiddleware())
 
@@ -261,13 +241,13 @@ func (s *Server) runHTTPServer() {
 			commentGroup.GET("/:id/replies", s.commentHandl.GetCommentReplies)
 
 			// 需要登录的接口
-			commentGroup.POST("", commonmiddleware.JWTValidMiddleware(), s.commentHandl.CreateComment)
-			commentGroup.PUT("/:id", commonmiddleware.JWTValidMiddleware(), s.commentHandl.UpdateComment)
-			commentGroup.DELETE("/:id", commonmiddleware.JWTValidMiddleware(), s.commentHandl.DeleteComment)
-			commentGroup.POST("/:id/reply", commonmiddleware.JWTValidMiddleware(), s.commentHandl.ReplyComment)
-			commentGroup.POST("/:id/like", commonmiddleware.JWTValidMiddleware(), s.commentHandl.LikeComment)
-			commentGroup.POST("/article/:article_id/enable", commonmiddleware.JWTValidMiddleware(), s.commentHandl.EnableComment)
-			commentGroup.POST("/article/:article_id/disable", commonmiddleware.JWTValidMiddleware(), s.commentHandl.DisableComment)
+			commentGroup.POST("", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.CreateComment)
+			commentGroup.PUT("/:id", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.UpdateComment)
+			commentGroup.DELETE("/:id", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.DeleteComment)
+			commentGroup.POST("/:id/reply", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.ReplyComment)
+			commentGroup.POST("/:id/like", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.LikeComment)
+			commentGroup.POST("/article/:article_id/enable", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.EnableComment)
+			commentGroup.POST("/article/:article_id/disable", commonmiddleware.JWTValidMiddleware(), commonmiddleware.ContextMiddleware(), s.commentHandl.DisableComment)
 		}
 	}
 
@@ -312,8 +292,8 @@ func (s *Server) runGRPCServer() {
 		grpc.MaxConcurrentStreams(constants.DefaultGRPCMaxConcurrentStreams),
 	}
 
-	// 高并发增强：添加 unary 拦截器（超时+熔断）
-	grpcOpts = append(grpcOpts, grpc.UnaryInterceptor(s.grpcUnaryInterceptor))
+	// 高并发增强：添加 unary 拦截器（超时+熔断），并叠加 gRPC 鉴权拦截器
+	grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(s.grpcUnaryInterceptor, commonmiddleware.GRPCAuthInterceptor()))
 
 	s.grpcServer = grpc.NewServer(grpcOpts...)
 	comment.RegisterCommentServiceServer(s.grpcServer, &handler.GrpcCommentHandler{
@@ -362,7 +342,28 @@ func (s *Server) runMetricsServer() {
 }
 
 func main() {
-	// 加载配置（支持 CONFIG_PATH 环境变量覆盖，与 user/article 服务保持一致）
+	cfg := loadConfig()
+
+	log.Init(cfg.App.LogDir, cfg.App.LogLevel, constants.ServiceNameComment)
+	metrics.Init()
+
+	server := NewServer(cfg)
+
+	deregister := registerToConsul(cfg)
+	if deregister != nil {
+		defer deregister()
+	}
+
+	defer common_database.Close()
+	defer cache.Close()
+	defer log.StopRotation()
+	if err := server.Run(); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
+}
+
+// loadConfig 解析配置路径并加载配置，加载失败时终止进程。
+func loadConfig() *config.Config {
 	configPath := os.Getenv(constants.EnvConfigPath)
 	if configPath == "" {
 		configPath = constants.DefaultConfigPath
@@ -371,19 +372,53 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	return cfg
+}
 
-	// 初始化日志
-	log.Init(cfg.App.LogDir, cfg.App.LogLevel, constants.ServiceNameComment)
+// registerToConsul 向 Consul 注册本服务实例，返回取消注册函数。
+// 注册失败不致命（降级运行），返回 nil。
+func registerToConsul(cfg *config.Config) func() error {
+	deregister, err := consul.Register(consul.Registration{
+		Name:               cfg.App.Name,
+		ConsulAddress:      cfg.Consul.Address,
+		GRPCPort:           cfg.GRPC.Port,
+		HTTPPort:           cfg.HTTP.Port,
+		CheckInterval:      cfg.Consul.CheckInterval,
+		DeregisterCritical: cfg.Consul.DeregisterCritical,
+	})
+	if err != nil {
+		log.Warnf("failed to register to consul: %v", err)
+		return nil
+	}
+	return deregister
+}
 
-	// 初始化指标
-	metrics.Init()
+// runDBMigration 在分布式锁保护下执行 GORM AutoMigrate。
+// 多实例部署时仅一个实例执行建表/补列，避免并发 ALTER 产生元数据争用。
+// Redis 不可用时降级为直接迁移（GORM AutoMigrate 本身幂等）。
+func runDBMigration(db interface{ AutoMigrate(dst ...interface{}) error }, lockKey string, models ...interface{}) {
+	const migrationLockTTL = 60 * time.Second
+	hostname, _ := os.Hostname()
+	instanceID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
 
-	// 创建并运行服务器
-	server := NewServer(cfg)
-	defer common_database.Close()
-	defer cache.Close()
-	defer log.StopRotation()
-	if err := server.Run(); err != nil {
-		log.Fatalf("Server error: %v", err)
+	acquired, err := cache.TryLock(context.Background(), lockKey, instanceID, migrationLockTTL)
+	if err != nil {
+		log.Warnf("Failed to acquire migration lock (Redis unavailable): %v, proceeding without lock", err)
+	} else if acquired {
+		log.Infof("Migration lock acquired by instance %s", instanceID)
+		defer func() {
+			if unlockErr := cache.Unlock(context.Background(), lockKey, instanceID); unlockErr != nil {
+				log.Warnf("Failed to release migration lock: %v", unlockErr)
+			}
+		}()
+	} else {
+		log.Info("Migration lock held by another instance, skipping AutoMigrate")
+		time.Sleep(2 * time.Second)
+	}
+
+	if acquired || err != nil {
+		if migrateErr := db.AutoMigrate(models...); migrateErr != nil {
+			log.Fatalf("Failed to migrate database: %v", migrateErr)
+		}
 	}
 }
