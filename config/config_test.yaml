@@ -1,0 +1,24 @@
+server:
+  name: "comment-service"
+  port: 50052
+  log_level: "debug"
+
+consul:
+  address: "consul:8500"
+  scheme: "http"
+
+mysql:
+  host: "mysql"
+  port: 3306
+  user: "root"
+  password: "root123"
+  database: "blog"
+
+redis:
+  addr: "redis:6379"
+  password: ""
+  db: 0
+
+tracing:
+  enabled: true
+  jaeger_endpoint: "http://jaeger:14268/api/traces"

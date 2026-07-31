@@ -35,7 +35,7 @@ WORKDIR /app
 
 # Copy binary
 COPY --from=builder /app/comment-service .
-COPY --from=builder /app/config.yaml .
+COPY --from=builder /app/config/ ./config/
 
 EXPOSE 8083 9003 9093
 
