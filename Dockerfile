@@ -1,42 +1,42 @@
+# syntax=docker/dockerfile:1
+
 # Build stage
 FROM golang:1.25.0-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
 RUN apk add --no-cache git ca-certificates
 
-# 容器内默认 GOPROXY 为 proxy.golang.org，国内网络通常不可达，
-# 显式设置为本机一致的国内镜像，避免 go mod download 失败。
 ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 ENV GOSUMDB=off
 
-# Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Copy source code
 COPY . .
 
-# 版本号（docker build --build-arg GIT_VERSION=xxx 注入，默认 dev）
 ARG GIT_VERSION=dev
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+ARG APP_NAME=comment-service
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
     -ldflags "-X main.Version=${GIT_VERSION}" \
-    -o comment-service ./cmd/server
+    -o /app/${APP_NAME} ./cmd/server
 
 # Final stage
 FROM alpine:latest
+
+ENV APP_NAME=comment-service
 
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy binary
-COPY --from=builder /app/comment-service .
+COPY --from=builder /app/${APP_NAME} .
 COPY --from=builder /app/config/ ./config/
 
 EXPOSE 8083 9003 9093
 
-CMD ["./comment-service"]
+CMD exec ./${APP_NAME}

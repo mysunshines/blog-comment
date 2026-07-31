@@ -1,24 +1,47 @@
-server:
+app:
   name: "comment-service"
-  port: 50052
+  env: "test"
   log_level: "debug"
 
-consul:
-  address: "consul:8500"
-  scheme: "http"
+grpc:
+  host: "0.0.0.0"
+  port: 9003
 
-mysql:
+http:
+  host: "0.0.0.0"
+  port: 8083
+
+database:
   host: "mysql"
   port: 3306
   user: "root"
   password: "root123"
-  database: "blog"
+  name: "blog"
+  max_open_conns: 25
 
 redis:
-  addr: "redis:6379"
+  host: "redis"
+  port: 6379
   password: ""
   db: 0
 
-tracing:
+consul:
+  address: "consul:8500"
+
+micro:
+  registry:
+    type: consul
+    address: "consul:8500"
+    timeout: 5
+
+metrics:
   enabled: true
-  jaeger_endpoint: "http://jaeger:14268/api/traces"
+  port: 9093
+
+jwt:
+  secret: "test-secret-key-do-not-use-in-production"
+
+rate_limit:
+  enabled: true
+  qps: 1000
+  burst: 2000
