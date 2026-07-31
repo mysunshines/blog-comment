@@ -1,4 +1,6 @@
-package handler
+// Package v1 存放 comment-service 的 HTTP API 处理器（v1 版本）。
+// 后续迭代 v2 接口时，新增 internal/handler/v2 包即可，互不干扰。
+package v1
 
 import (
 	"strconv"
@@ -7,6 +9,7 @@ import (
 	"github.com/mysunshines/blog-comment/internal/service"
 	"github.com/mysunshines/blog-comment/pkg/response"
 
+	"github.com/mysunshines/gocommon/constants"
 	commonmiddleware "github.com/mysunshines/gocommon/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -142,7 +145,7 @@ func (h *CommentHandler) DeleteComment(c *gin.Context) {
 
 	role := getUserRole(c)
 	isAdmin := uint(0)
-	if role == 1 { // 假设1是管理员角色
+	if role == uint(constants.RoleAdmin) { // 2 为管理员角色
 		isAdmin = 1
 	}
 

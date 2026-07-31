@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/mysunshines/blog-comment/internal/config"
-	"github.com/mysunshines/blog-comment/internal/handler"
+	v1 "github.com/mysunshines/blog-comment/internal/handler/v1"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/repository"
 	"github.com/mysunshines/blog-comment/internal/service"
 	comment "github.com/mysunshines/blog-comment/proto/pb"
-	user "github.com/mysunshines/blog-user/proto/pb"
 
 	"github.com/mysunshines/gocommon/cache"
 	"github.com/mysunshines/gocommon/constants"
@@ -24,13 +23,13 @@ import (
 	"github.com/mysunshines/gocommon/log"
 	"github.com/mysunshines/gocommon/metrics"
 	commonmiddleware "github.com/mysunshines/gocommon/middleware"
+	grpcclient "github.com/mysunshines/gocommon/grpcclient"
 	"github.com/mysunshines/gocommon/consul"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sony/gobreaker"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 	"gorm.io/gorm"
@@ -47,9 +46,8 @@ type Server struct {
 	commentSvc      service.CommentService
 	commentRepo     repository.CommentRepository
 	commentLikeRepo repository.CommentLikeRepository
-	commentHandl    *handler.CommentHandler
+	commentHandl    *v1.CommentHandler
 	db              *gorm.DB
-	userClient      user.UserServiceClient
 	cb              *gobreaker.CircuitBreaker // 熔断器
 }
 
@@ -88,21 +86,20 @@ func NewServer(cfg *config.Config) *Server {
 		Timeout:     constants.DefaultCBTimeout * time.Second,
 	})
 
-	// 连接 User Service（带超时和重试）
-	userClient, err := initUserClient(cfg)
-	if err != nil {
-		log.Warnf("Warning: Failed to connect to user service: %v", err)
-	}
+	// 注册下游服务逻辑名->地址映射，供 grpcclient.SendRequest 动态解析（连接按需懒建立、自动重连）。
+	// 注册下游用户服务 v1 的调用侧逻辑名与真实 proto 服务名 -> 地址映射，
+	// 供 grpcclient.SendRequest(ctx, constants.UserServiceV1Alias+".IsInBlacklist", ...) 动态解析。
+	grpcclient.RegisterService(constants.UserServiceV1Alias, constants.UserServiceV1Service, cfg.UserService.Addr())
 
 	// 初始化仓储层
 	commentRepo := repository.NewCommentRepository(db)
 	commentLikeRepo := repository.NewCommentLikeRepository(db)
 
 	// 初始化服务层
-	commentSvc := service.NewCommentService(commentRepo, commentLikeRepo, db, userClient)
+	commentSvc := service.NewCommentService(commentRepo, commentLikeRepo, db)
 
 	// 初始化处理器
-	commentHandl := handler.NewCommentHandler(commentSvc)
+	commentHandl := v1.NewCommentHandler(commentSvc)
 
 	return &Server{
 		cfg:             cfg,
@@ -111,34 +108,8 @@ func NewServer(cfg *config.Config) *Server {
 		commentLikeRepo: commentLikeRepo,
 		commentHandl:    commentHandl,
 		db:              db,
-		userClient:      userClient,
 		cb:              cb,
 	}
-}
-
-func initUserClient(cfg *config.Config) (user.UserServiceClient, error) {
-	grpcOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		// 使用默认服务配置，启用自动重连和 waitForReady
-		grpc.WithDefaultServiceConfig(`{
-			"loadBalancingPolicy": "round_robin",
-			"healthCheckConfig": {
-				"serviceName": ""
-			}
-		}`),
-		// Keepalive 参数：定期探测连接是否存活，断线自动重连
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                10 * time.Second, // 10s 发送一次心跳
-			Timeout:             3 * time.Second,  // 心跳超时 3s
-			PermitWithoutStream: true,             // 无活动流也发心跳
-		}),
-	}
-
-	conn, err := grpc.NewClient(cfg.UserService.Addr(), grpcOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create user service client: %w", err)
-	}
-	return user.NewUserServiceClient(conn), nil
 }
 
 // Run 运行服务器
@@ -292,11 +263,16 @@ func (s *Server) runGRPCServer() {
 		grpc.MaxConcurrentStreams(constants.DefaultGRPCMaxConcurrentStreams),
 	}
 
-	// 高并发增强：添加 unary 拦截器（超时+熔断），并叠加 gRPC 鉴权拦截器
-	grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(s.grpcUnaryInterceptor, commonmiddleware.GRPCAuthInterceptor()))
+	// 高并发增强：添加 unary 拦截器（超时+熔断），并叠加 gRPC 鉴权/指标/日志拦截器
+	grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(
+		s.grpcUnaryInterceptor,
+		commonmiddleware.GRPCAuthInterceptor(),
+		commonmiddleware.GRPCMetricsInterceptor(constants.ServiceNameComment),
+		commonmiddleware.GRPCLoggingInterceptor(),
+	))
 
 	s.grpcServer = grpc.NewServer(grpcOpts...)
-	comment.RegisterCommentServiceServer(s.grpcServer, &handler.GrpcCommentHandler{
+	comment.RegisterCommentServiceServer(s.grpcServer, &v1.GrpcCommentHandler{
 		Svc: s.commentSvc,
 		Cb:  s.cb,
 	})

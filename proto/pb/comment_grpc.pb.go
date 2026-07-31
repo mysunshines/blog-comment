@@ -2,13 +2,12 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.33.4
-// source: comment.proto
+// source: proto/comment.proto
 
 package pb
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -20,17 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CommentService_CreateComment_FullMethodName      = "/comment.CommentService/CreateComment"
-	CommentService_GetComment_FullMethodName         = "/comment.CommentService/GetComment"
-	CommentService_UpdateComment_FullMethodName      = "/comment.CommentService/UpdateComment"
-	CommentService_DeleteComment_FullMethodName      = "/comment.CommentService/DeleteComment"
-	CommentService_ListComments_FullMethodName       = "/comment.CommentService/ListComments"
-	CommentService_GetArticleComments_FullMethodName = "/comment.CommentService/GetArticleComments"
-	CommentService_ReplyComment_FullMethodName       = "/comment.CommentService/ReplyComment"
-	CommentService_LikeComment_FullMethodName        = "/comment.CommentService/LikeComment"
-	CommentService_GetCommentReplies_FullMethodName  = "/comment.CommentService/GetCommentReplies"
-	CommentService_EnableComment_FullMethodName      = "/comment.CommentService/EnableComment"
-	CommentService_DisableComment_FullMethodName     = "/comment.CommentService/DisableComment"
+	CommentService_CreateComment_FullMethodName      = "/comment.v1.CommentService/CreateComment"
+	CommentService_GetComment_FullMethodName         = "/comment.v1.CommentService/GetComment"
+	CommentService_UpdateComment_FullMethodName      = "/comment.v1.CommentService/UpdateComment"
+	CommentService_DeleteComment_FullMethodName      = "/comment.v1.CommentService/DeleteComment"
+	CommentService_ListComments_FullMethodName       = "/comment.v1.CommentService/ListComments"
+	CommentService_GetArticleComments_FullMethodName = "/comment.v1.CommentService/GetArticleComments"
+	CommentService_ReplyComment_FullMethodName       = "/comment.v1.CommentService/ReplyComment"
+	CommentService_LikeComment_FullMethodName        = "/comment.v1.CommentService/LikeComment"
+	CommentService_GetCommentReplies_FullMethodName  = "/comment.v1.CommentService/GetCommentReplies"
+	CommentService_EnableComment_FullMethodName      = "/comment.v1.CommentService/EnableComment"
+	CommentService_DisableComment_FullMethodName     = "/comment.v1.CommentService/DisableComment"
 )
 
 // CommentServiceClient is the client API for CommentService service.
@@ -449,7 +448,7 @@ func _CommentService_DisableComment_Handler(srv interface{}, ctx context.Context
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CommentService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "comment.CommentService",
+	ServiceName: "comment.v1.CommentService",
 	HandlerType: (*CommentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -498,5 +497,5 @@ var CommentService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "comment.proto",
+	Metadata: "proto/comment.proto",
 }

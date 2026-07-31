@@ -152,6 +152,9 @@ func applyEnvOverrides(c *Config) {
 			c.Redis.Port = port
 		}
 	}
+	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
+		c.Redis.Password = v
+	}
 	if v := os.Getenv("CONSUL_ADDRESS"); v != "" {
 		c.Consul.Address = v
 	}

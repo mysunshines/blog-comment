@@ -1,4 +1,4 @@
-package handler
+package v1
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	comment "github.com/mysunshines/blog-comment/proto/pb"
 
 	"github.com/mysunshines/gocommon/constants"
-	"github.com/mysunshines/gocommon/middleware"
+	commonmiddleware "github.com/mysunshines/gocommon/middleware"
 
 	"github.com/sony/gobreaker"
 )
@@ -22,7 +22,7 @@ type GrpcCommentHandler struct {
 }
 
 func (h *GrpcCommentHandler) CreateComment(ctx context.Context, req *comment.CreateCommentRequest) (*comment.CreateCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (h *GrpcCommentHandler) GetComment(ctx context.Context, req *comment.GetCom
 }
 
 func (h *GrpcCommentHandler) UpdateComment(ctx context.Context, req *comment.UpdateCommentRequest) (*comment.UpdateCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (h *GrpcCommentHandler) UpdateComment(ctx context.Context, req *comment.Upd
 }
 
 func (h *GrpcCommentHandler) DeleteComment(ctx context.Context, req *comment.DeleteCommentRequest) (*comment.DeleteCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (h *GrpcCommentHandler) GetArticleComments(ctx context.Context, req *commen
 }
 
 func (h *GrpcCommentHandler) ReplyComment(ctx context.Context, req *comment.ReplyCommentRequest) (*comment.ReplyCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (h *GrpcCommentHandler) ReplyComment(ctx context.Context, req *comment.Repl
 }
 
 func (h *GrpcCommentHandler) LikeComment(ctx context.Context, req *comment.LikeCommentRequest) (*comment.LikeCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (h *GrpcCommentHandler) GetCommentReplies(ctx context.Context, req *comment
 }
 
 func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.EnableCommentRequest) (*comment.EnableCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.Ena
 }
 
 func (h *GrpcCommentHandler) DisableComment(ctx context.Context, req *comment.DisableCommentRequest) (*comment.DisableCommentResponse, error) {
-	uid, err := middleware.RequireGRPCAuth(ctx)
+	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
 	if err != nil {
 		return nil, err
 	}

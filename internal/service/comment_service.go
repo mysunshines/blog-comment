@@ -8,6 +8,7 @@ import (
 	"github.com/mysunshines/blog-comment/internal/repository"
 	"github.com/mysunshines/blog-comment/pkg/errors"
 	user "github.com/mysunshines/blog-user/proto/pb"
+	"github.com/mysunshines/gocommon/grpcclient"
 	"github.com/mysunshines/gocommon/pool"
 
 	"gorm.io/gorm"
@@ -33,7 +34,6 @@ type commentService struct {
 	commentRepo     repository.CommentRepository
 	commentLikeRepo repository.CommentLikeRepository
 	db              *gorm.DB
-	userClient      user.UserServiceClient
 }
 
 // NewCommentService 创建评论服务
@@ -41,13 +41,11 @@ func NewCommentService(
 	commentRepo repository.CommentRepository,
 	commentLikeRepo repository.CommentLikeRepository,
 	db *gorm.DB,
-	userClient user.UserServiceClient,
 ) CommentService {
 	return &commentService{
 		commentRepo:     commentRepo,
 		commentLikeRepo: commentLikeRepo,
 		db:              db,
-		userClient:      userClient,
 	}
 }
 
@@ -69,12 +67,13 @@ func (s *commentService) CreateComment(ctx context.Context, req *model.CreateCom
 		return nil, errors.CommentDisabled()
 	}
 
-	// 检查用户是否在黑名单
-	blockedResp, err := s.userClient.IsInBlacklist(ctx, &user.IsBlacklistRequest{
+	// 检查用户是否在黑名单：api 直接取用户服务 pb 生成的全方法名常量
+	// （"/user.v1.UserService/IsInBlacklist"），由 proto 单一来源产出，方法改名时编译期报错。
+	var blkResp user.IsBlacklistResponse
+	if err := grpcclient.SendRequest(ctx, user.UserService_IsInBlacklist_FullMethodName, &user.IsBlacklistRequest{
 		UserId:       uint32(article.UserID),
 		TargetUserId: uint32(req.UserID),
-	})
-	if err == nil && blockedResp.InBlacklist {
+	}, &blkResp); err == nil && blkResp.InBlacklist {
 		return nil, errors.InBlacklist()
 	}
 
