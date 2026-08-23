@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mysunshines/blog-comment/internal/errors"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/repository"
-	"github.com/mysunshines/blog-comment/pkg/errors"
 	user "github.com/mysunshines/blog-user/proto/pb"
 	"github.com/mysunshines/gocommon/grpcclient"
 	"github.com/mysunshines/gocommon/pool"
@@ -23,10 +23,14 @@ type CommentService interface {
 	ListComments(ctx context.Context, req *model.ListCommentsRequest) ([]*model.Comment, int64, error)
 	GetArticleComments(ctx context.Context, req *model.GetArticleCommentsRequest) ([]*model.Comment, int64, bool, error)
 	ReplyComment(ctx context.Context, parentID uint, req *model.ReplyCommentRequest) (*model.Comment, error)
-	LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, error)
+	LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, bool, error)
 	GetCommentReplies(ctx context.Context, req *model.GetCommentRepliesRequest) ([]*model.Comment, int64, error)
 	EnableComment(ctx context.Context, req *model.EnableCommentRequest) error
 	DisableComment(ctx context.Context, req *model.DisableCommentRequest) error
+
+	// 管理员操作
+	AdminListComments(ctx context.Context, articleID, userID uint, keyword string, page, pageSize int) ([]*model.Comment, int64, error)
+	AdminDeleteComment(ctx context.Context, commentID uint) error
 }
 
 // commentService 评论服务实现
@@ -86,6 +90,15 @@ func (s *commentService) CreateComment(ctx context.Context, req *model.CreateCom
 		Status:    1,
 	}
 
+	// 行内批注：当三字段同时有效时记录锚点，供前端渲染高亮。
+	// 父评论（被回复对象）上记录的锚点会作为整条批注线程的锚点，
+	// 因此回复时若父评论是批注，回复自动继承其锚点（不覆盖）。
+	if req.ParagraphIndex >= 0 && req.AnchorText != "" && req.AnchorOffset >= 0 {
+		comment.ParagraphIndex = req.ParagraphIndex
+		comment.AnchorText = req.AnchorText
+		comment.AnchorOffset = req.AnchorOffset
+	}
+
 	// 使用事务
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 创建评论
@@ -142,7 +155,10 @@ func (s *commentService) UpdateComment(ctx context.Context, id uint, req *model.
 	return s.commentRepo.GetByID(ctx, id)
 }
 
-// DeleteComment 删除评论
+// DeleteComment 逻辑删除评论（status 置 2，不物理删除）。
+// 被删节点若存在直接子级（楼中楼回复），这些子级自动上提一级，
+// parent_id 改为被删节点的父级，从而保证子孙回复仍然可见、不产生孤儿。
+// 若该评论本身是主评论，则其回复会升级为顶层主评论。
 func (s *commentService) DeleteComment(ctx context.Context, id uint, req *model.DeleteCommentRequest) error {
 	// 获取原评论
 	comment, err := s.commentRepo.GetByID(ctx, id)
@@ -155,23 +171,46 @@ func (s *commentService) DeleteComment(ctx context.Context, id uint, req *model.
 		return errors.PermissionDenied()
 	}
 
-	// 使用事务
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 如果是回复，减少父评论的回复数
-		if comment.ParentID > 0 {
-			tx.Model(&model.Comment{}).Where("id = ?", comment.ParentID).
-				UpdateColumn("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
+		// 1. 取出被删节点的所有直接子级（仅正常状态）
+		var children []*model.Comment
+		if err := tx.Where("parent_id = ? AND status = 1", id).Find(&children).Error; err != nil {
+			return err
 		}
 
-		// 删除该评论的所有回复
-		tx.Where("parent_id = ?", id).Delete(&model.Comment{})
+		// 2. 上提：直接子级的 parent_id 改为被删节点的父级（保留可见、不丢数据）
+		if len(children) > 0 {
+			if err := tx.Model(&model.Comment{}).
+				Where("parent_id = ? AND status = 1", id).
+				Update("parent_id", comment.ParentID).Error; err != nil {
+				return err
+			}
+		}
 
-		// 删除评论
-		tx.Delete(&model.Comment{}, id)
+		// 3. 逻辑删除本节点（status=2），不物理删除
+		if err := tx.Model(&model.Comment{}).
+			Where("id = ?", id).
+			Update("status", uint(2)).Error; err != nil {
+			return err
+		}
 
-		// 减少文章评论数
-		tx.Model(&model.Article{}).Where("id = ?", comment.ArticleID).
-			UpdateColumn("comment_count", gorm.Expr("GREATEST(comment_count - 1, 0)"))
+		// 4. 计数调整
+		// 4.1 文章评论数 -1（本条评论不再可见）
+		if err := tx.Model(&model.Article{}).
+			Where("id = ?", comment.ArticleID).
+			UpdateColumn("comment_count", gorm.Expr("GREATEST(comment_count - 1, 0)")).Error; err != nil {
+			return err
+		}
+
+		// 4.2 若有父节点：父级 reply_count 变化 = 原直接子(被删) -1 + 上提子级(+len)
+		//     净变化 = len(children) - 1；无父节点（主评论）无需调整 reply_count。
+		if comment.ParentID > 0 {
+			if err := tx.Model(&model.Comment{}).
+				Where("id = ?", comment.ParentID).
+				UpdateColumn("reply_count", gorm.Expr("GREATEST(reply_count + ?, 0)", len(children)-1)).Error; err != nil {
+				return err
+			}
+		}
 
 		return nil
 	})
@@ -204,7 +243,7 @@ func (s *commentService) GetArticleComments(ctx context.Context, req *model.GetA
 		req.Size = 10
 	}
 
-	comments, total, err := s.commentRepo.GetByArticleID(ctx, req.ArticleID, int(req.Page), int(req.Size), req.IncludeReplies)
+	comments, total, err := s.commentRepo.GetByArticleID(ctx, req.ArticleID, int(req.Page), int(req.Size), req.IncludeReplies, req.Sort)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -234,11 +273,21 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 		return nil, errors.CommentDisabled()
 	}
 
-	// 创建回复
+	// 创建回复。
+	// 保留真实层级：reply.ParentID = 被回复评论(parentID)，
+	// 无论回复的是主评论还是其第 N 级子评论，都原样指向它的上一级。
+	// 同时记录 root_id = 根主评论，便于 GetByArticleID 一次性取全整个线程。
+	// 注意：root_id 应沿父链追溯到真正顶层主评论，而不是只向上取一代。
+	rootID := parentID
+	if parentComment.RootID != 0 {
+		rootID = parentComment.RootID
+	}
+
 	reply := &model.Comment{
 		ArticleID: parentComment.ArticleID,
 		UserID:    req.UserID,
-		ParentID:  parentID,
+		ParentID:  parentID, // 真实上一级评论
+		RootID:    rootID,   // 根主评论线程
 		Content:   req.Content,
 		Status:    1,
 	}
@@ -250,8 +299,8 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 			return errors.CommentCreateFailed(err)
 		}
 
-		// 增加父评论的回复数
-		tx.Model(&model.Comment{}).Where("id = ?", parentID).
+		// 增加根主评论的回复数
+		tx.Model(&model.Comment{}).Where("id = ?", rootID).
 			UpdateColumn("reply_count", gorm.Expr("reply_count + 1"))
 
 		// 增加文章评论数
@@ -268,8 +317,10 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 	return s.commentRepo.GetByID(ctx, reply.ID)
 }
 
-// LikeComment 点赞评论
-func (s *commentService) LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, error) {
+// LikeComment 对评论点赞/取消点赞（toggle）。
+// 同一用户对同一评论只能点赞一次：已点赞时再次调用则取消点赞并返回 liked=false，
+// 未点赞时调用则点赞并返回 liked=true。返回操作后的最新点赞数与点赞状态。
+func (s *commentService) LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, bool, error) {
 	// 并行：检查评论是否存在 + 检查是否已点赞（两个查询互不依赖）
 	results := pool.Go(ctx,
 		func(ctx context.Context) (interface{}, error) {
@@ -282,43 +333,50 @@ func (s *commentService) LikeComment(ctx context.Context, commentID uint, req *m
 	)
 
 	if results[0].Err != nil {
-		return 0, results[0].Err
+		return 0, false, results[0].Err
 	}
 	if results[1].Err != nil {
-		return 0, results[1].Err
+		return 0, false, results[1].Err
 	}
 
 	existingLike, _ := results[1].Value.(*model.CommentLike)
-	if existingLike != nil {
-		return 0, errors.AlreadyLiked()
-	}
 
-	// 创建点赞记录
-	like := &model.CommentLike{
-		CommentID: commentID,
-		UserID:    req.UserID,
-	}
-
-	// 使用事务
+	// 使用事务：已点赞则取消，未点赞则新增
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 创建点赞记录
+		if existingLike != nil {
+			// 取消点赞
+			if err := s.commentLikeRepo.DeleteByCommentAndUser(ctx, commentID, req.UserID); err != nil {
+				return err
+			}
+			// 防止 like_count 变负
+			tx.Model(&model.Comment{}).Where("id = ? AND like_count > 0", commentID).
+				UpdateColumn("like_count", gorm.Expr("like_count - 1"))
+			return nil
+		}
+
+		// 新增点赞记录
+		like := &model.CommentLike{
+			CommentID: commentID,
+			UserID:    req.UserID,
+		}
 		if err := tx.Create(like).Error; err != nil {
 			return err
 		}
-
-		// 增加评论点赞数
 		tx.Model(&model.Comment{}).Where("id = ?", commentID).
 			UpdateColumn("like_count", gorm.Expr("like_count + 1"))
-
 		return nil
 	})
 
 	if err != nil {
-		return 0, errors.Internal(fmt.Sprintf("点赞失败: %v", err))
+		return 0, false, errors.Internal("点赞失败", err)
 	}
 
-	// 获取最新的点赞数
-	return s.commentLikeRepo.GetLikeCount(ctx, commentID)
+	liked := existingLike == nil
+	count, err := s.commentLikeRepo.GetLikeCount(ctx, commentID)
+	if err != nil {
+		return 0, liked, err
+	}
+	return count, liked, nil
 }
 
 // GetCommentReplies 获取评论回复
@@ -369,6 +427,22 @@ func (s *commentService) DisableComment(ctx context.Context, req *model.DisableC
 	}
 
 	return s.commentRepo.UpdateArticleAllowComment(ctx, req.ArticleID, false)
+}
+
+// AdminListComments 管理端评论列表（支持按文章/用户/关键字过滤）
+func (s *commentService) AdminListComments(ctx context.Context, articleID, userID uint, keyword string, page, pageSize int) ([]*model.Comment, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	return s.commentRepo.AdminList(ctx, articleID, userID, keyword, page, pageSize)
+}
+
+// AdminDeleteComment 管理端删除评论（无视作者，直接删除）
+func (s *commentService) AdminDeleteComment(ctx context.Context, commentID uint) error {
+	return s.DeleteComment(ctx, commentID, &model.DeleteCommentRequest{IsAdmin: 1})
 }
 
 // CacheKey 生成缓存键

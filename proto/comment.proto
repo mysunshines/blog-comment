@@ -4,16 +4,39 @@ package comment.v1;
 
 option go_package = "github.com/mysunshines/blog-comment/proto/pb";
 
+// ============================================================================
+// gRPC Contract (source of truth for comment-service)
+// ----------------------------------------------------------------------------
+// 业务流量一律走 gRPC，由 Gateway 经 /api/v1 反射代理转发：
+//   URL 末段 snake_case → PascalCase 即方法名，首段 → service 名。
+//   例：/api/v1/comment/disable_comment → CommentService.DisableComment
+// 鉴权约定：
+//   - "登录"    = 需 JWT (Authorization: Bearer)
+//   - "管理员"  = 需 JWT + 管理员角色（gRPC 层由 requireGRPCAdmin 校验）
+//   - "公开"    = 无需鉴权
+// 备注：
+//   - HTTP 端口仅承载探针（/health、/ready、/version），不再暴露任何业务路由。
+// ============================================================================
+
 // 错误码定义 (区间: 40000-49999)
 enum CommentErrorCode {
     COMMENT_SUCCESS = 0;
+    // COMMENT_INTERNAL_ERROR 复用 gocommon 通用内部错误码 10005，
+    // 供未预期错误 / errors.Internal 兜底映射，与通用码区间对齐。
+    COMMENT_INTERNAL_ERROR = 10005;
     COMMENT_NOT_FOUND = 40001;
+    COMMENT_BAD_REQUEST = 40002;
+    COMMENT_DISABLED = 40003;
+    COMMENT_IN_BLACKLIST = 40004;
+    COMMENT_ALREADY_LIKED = 40005;
     COMMENT_CREATE_FAILED = 40011;
     COMMENT_UPDATE_FAILED = 40012;
     COMMENT_DELETE_FAILED = 40013;
     COMMENT_LIST_FAILED = 40014;
     COMMENT_ENABLE_FAILED = 40015;
     COMMENT_DISABLE_FAILED = 40016;
+    COMMENT_COMMENT_NOT_FOUND = 40018;
+    COMMENT_FORBIDDEN = 40020;
 }
 
 service CommentService {
@@ -28,6 +51,10 @@ service CommentService {
     rpc GetCommentReplies(GetCommentRepliesRequest) returns (GetCommentRepliesResponse);
     rpc EnableComment(EnableCommentRequest) returns (EnableCommentResponse);
     rpc DisableComment(DisableCommentRequest) returns (DisableCommentResponse);
+
+    // ===================== 后台管理（仅管理员，requireGRPCAdmin） =====================
+    rpc AdminListComments(AdminListCommentsRequest) returns (AdminListCommentsResponse);
+    rpc AdminDeleteComment(AdminDeleteCommentRequest) returns (AdminDeleteCommentResponse);
 }
 
 message Comment {
@@ -111,6 +138,8 @@ message GetArticleCommentsRequest {
     uint32 page = 2;
     uint32 page_size = 3;
     bool include_replies = 4;
+    // 排序方式: latest(默认,按创建时间倒序) / oldest(按创建时间正序) / hot(按点赞数倒序)
+    string sort = 5;
 }
 
 message GetArticleCommentsResponse {
@@ -142,6 +171,7 @@ message LikeCommentResponse {
     uint32 code = 1;
     string message = 2;
     uint32 like_count = 3;
+    bool liked = 4; // 操作后的点赞状态：true=已点赞，false=已取消点赞
 }
 
 message GetCommentRepliesRequest {
@@ -173,6 +203,32 @@ message DisableCommentRequest {
 }
 
 message DisableCommentResponse {
+    uint32 code = 1;
+    string message = 2;
+}
+
+// ===================== 后台管理 =====================
+
+message AdminListCommentsRequest {
+    uint32 page = 1;
+    uint32 page_size = 2;
+    uint32 article_id = 3;
+    uint32 user_id = 4;
+    string keyword = 5;
+}
+
+message AdminListCommentsResponse {
+    uint32 code = 1;
+    string message = 2;
+    repeated Comment comments = 3;
+    uint32 total = 4;
+}
+
+message AdminDeleteCommentRequest {
+    uint32 comment_id = 1;
+}
+
+message AdminDeleteCommentResponse {
     uint32 code = 1;
     string message = 2;
 }

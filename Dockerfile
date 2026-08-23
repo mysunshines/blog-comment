@@ -61,7 +61,7 @@ COPY --from=builder /app/${APP_NAME} .
 COPY --from=builder /app/config/ ./config/
 
 # 8083: HTTP/管理接口, 9003: gRPC 业务通信, 9093: Prometheus Metrics
-EXPOSE 8083 9003 9093
+EXPOSE 8083 9103 9093
 
 # exec 使进程 PID=1，确保能收到 SIGTERM 信号实现优雅停机
 CMD exec ./${APP_NAME}

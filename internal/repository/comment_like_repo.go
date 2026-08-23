@@ -13,6 +13,7 @@ import (
 type CommentLikeRepository interface {
 	GetByCommentAndUser(ctx context.Context, commentID, userID uint) (*model.CommentLike, error)
 	GetLikeCount(ctx context.Context, commentID uint) (uint, error)
+	DeleteByCommentAndUser(ctx context.Context, commentID, userID uint) error
 }
 
 // commentLikeRepository 点赞数据访问层实现
@@ -49,4 +50,11 @@ func (r *commentLikeRepository) GetLikeCount(ctx context.Context, commentID uint
 		return 0, err
 	}
 	return uint(count), nil
+}
+
+// DeleteByCommentAndUser 删除指定评论下某用户的点赞记录（用于取消点赞）
+func (r *commentLikeRepository) DeleteByCommentAndUser(ctx context.Context, commentID, userID uint) error {
+	return r.db.WithContext(ctx).
+		Where("comment_id = ? AND user_id = ?", commentID, userID).
+		Delete(&model.CommentLike{}).Error
 }

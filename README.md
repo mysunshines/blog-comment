@@ -6,7 +6,7 @@
 
 **端口配置**:
 - HTTP: 8083
-- gRPC: 9003
+- gRPC: 9103
 - Metrics: 9093
 
 ## 二、技术栈
@@ -14,8 +14,7 @@
 | 类别 | 技术 |
 |------|------|
 | 语言 | Go 1.21+ |
-| Web框架 | Gin |
-| RPC框架 | gRPC + Protobuf |
+| RPC框架 | gRPC + Protobuf（**业务层纯 gRPC**；HTTP 仅保留 `/health`、`/ready`、`/version` 探活端口，由 `net/http` mux 承载，无 gin 业务路由） |
 | 数据库 | MySQL 8.0 |
 | 缓存 | Redis |
 | 监控 | Prometheus |
@@ -51,7 +50,9 @@ comment-service/
 
 ## 四、API 列表
 
-### 4.1 HTTP API
+### 4.1 gRPC API（经网关 `/api/v1` 与 `/admin-api` 反射代理）
+
+> 业务层纯 gRPC，下表路径为网关反射代理入口（`/api/v1/comment/<snake_method>` / `/admin-api/comments/<snake_method>`），实际对应 `comment.v1.CommentService` 的 gRPC 方法。
 
 | 方法 | 路径 | 描述 | 认证 |
 |------|------|------|------|
@@ -293,7 +294,9 @@ service CommentService {
 | `goroutine_count` | Gauge | - | Goroutine数量 |
 | `panic_counter_total` | Counter | service | Panic次数 |
 | `mysql_slow_queries_total` | Counter | - | MySQL慢查询数 |
-| `redis_hit_rate` | Gauge | - | Redis命中率 |
+| `redis_cache_hits_total` | Counter | - | Redis缓存命中次数 |
+| `redis_cache_misses_total` | Counter | - | Redis缓存未命中次数 |
+| Redis命中率(PromQL) | - | - | `sum(rate(redis_cache_hits_total[5m])) / clamp_min(sum(rate(redis_cache_hits_total[5m])) + sum(rate(redis_cache_misses_total[5m])), 0)` |
 | `redis_hot_keys_total` | Counter | key | 热键访问次数 |
 | `cache_operations_total` | Counter | operation, status | 缓存操作数 |
 | `db_operations_total` | Counter | operation, status | 数据库操作数 |
@@ -672,10 +675,20 @@ func RateLimitMiddleware() gin.HandlerFunc {
 
 ## 八、中间件链
 
-```
-请求 → RecoveryMiddleware → LoggingMiddleware → CORSMiddleware 
-    → MetricsMiddleware → TraceMiddleware → RateLimitMiddleware 
-    → JWTValidMiddleware → Handler → Response
+```text
+探活 HTTP（runHTTPServer，net/http mux，无业务路由）：
+  /health、/ready、/version  仅健康检查，无 gin 业务路由
+
+gRPC 拦截器链（业务走 gRPC，由网关/其他服务调用）：
+  grpcUnaryInterceptor(超时 + gobreaker 熔断)
+    → GRPCAuthInterceptor    // 校验 gRPC metadata 中的 Authorization
+    → GRPCMetricsInterceptor
+    → GRPCLoggingInterceptor
+
+鉴权说明：
+  comment-service 通过 gRPC 对外暴露，鉴权在 gRPC 层完成（GRPCAuthInterceptor 校验令牌），
+  具体方法是否要求登录由 handler 内 RequireGRPCAuth() / requireGRPCAdmin() 决定；
+  公开方法（如列表/详情）不强制，管理方法（Admin*）要求管理员角色。
 ```
 
 ## 九、数据库模型
@@ -692,8 +705,13 @@ func RateLimitMiddleware() gin.HandlerFunc {
 | like_count | INT UNSIGNED | DEFAULT 0 | 点赞数 |
 | reply_count | INT UNSIGNED | DEFAULT 0 | 回复数 |
 | status | TINYINT UNSIGNED | DEFAULT 1 | 状态(1=正常, 0=删除) |
+| paragraph_index | INT | DEFAULT -1 | 行内批注：选中片段所在段落序号，-1 表示非行内批注 |
+| anchor_text | VARCHAR(500) | DEFAULT '' | 行内批注：被选中的原文片段 |
+| anchor_offset | INT | DEFAULT -1 | 行内批注：片段在段落内的字符偏移，-1 表示未记录 |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | updated_at | TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
+
+> **行内批注（Confluence 式）**：当 `paragraph_index >= 0` 且 `anchor_text` 非空时，该评论锚定到正文某段落的选中片段，前端会把对应片段高亮并在评论区展示引用块（点击可跳回原文）。`anchor_offset` 仅作兜底定位，文章大改导致段落失配时，引用块仍会展示但原文高亮回退。
 
 **索引信息**:
 | 索引名 | 类型 | 列 | 唯一 | 说明 |
@@ -1416,3 +1434,24 @@ UPDATE articles SET allow_comment = ? WHERE id = ?
 | SQL条件 | 命中索引 | 说明 |
 |---------|----------|------|
 | `id = ?` | PRIMARY (articles) | 主键索引，快速定位 |
+
+## 进程退出与资源释放
+
+服务在 `cmd/server/main.go` 中统一处理退出流程：监听 `SIGINT`/`SIGTERM`，由 `Server.Run()` 优雅关闭 gRPC 与探活 HTTP server（10s 超时），随后调用 `shutdown()` 集合方法按固定顺序释放其余资源：
+
+1. **摘除流量**：从 Consul 注销（`deregister`），让网关停止转发新请求；
+2. **释放连接**：关闭 Redis 连接池（`cache.Close`）→ 关闭数据库连接池（`database.Close`）；
+3. **停热更/指标**：停止配置中心热更监听（`HotConfig.Stop`）→ 取消指标采集 context（`metricsCancel`）；
+4. **停日志**：最后 `log.StopRotation()` flush 并关闭日志文件。
+
+> 所有释放集中在 `shutdown()` 一处便于审计，新增需释放的资源只需在此追加，避免分散 `defer` 导致顺序混乱或重复释放。
+
+### 异常退出兜底（panic / 初始化失败）
+
+除上述正常 `SIGINT/SIGTERM` 路径外，本服务对两类异常退出也做了资源兜底：
+
+- **初始化失败**：`loadConfig` / `initInfra` / `registerToConsul` 等不再直接 `log.Fatalf`（内部 `os.Exit`），而是返回 `error` 由 `run()` 统一处理；`run()` 通过 `defer releaseInfra()` 释放已初始化的全局资源后回到 `main` 上报错误。
+- **运行期 panic**：`main` 顶层 `defer recover` 捕获 panic，`log.Errorf` 打印堆栈后调用 `releaseInfra()` 兜底释放再 `os.Exit(1)`。
+- HTTP/gRPC server 监听失败也不再 `os.Exit`，而是通过 `Server.quitCh` 通知 `Run` 走正常 `shutdown()` 路径。
+
+> `releaseInfra()` 幂等可重复调用，由正常 `shutdown`、panic 兜底、初始化失败 `defer` 三处共用，保证任何退出路径都不会泄漏 Redis/DB 连接、日志句柄或后台指标 goroutine。

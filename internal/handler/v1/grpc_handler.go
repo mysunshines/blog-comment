@@ -2,11 +2,17 @@ package v1
 
 import (
 	"context"
+	"log"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/mysunshines/blog-comment/internal/client"
+	"github.com/mysunshines/blog-comment/internal/errors"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/service"
-	"github.com/mysunshines/blog-comment/pkg/errors"
 	comment "github.com/mysunshines/blog-comment/proto/pb"
+	user "github.com/mysunshines/blog-user/proto/pb"
 
 	"github.com/mysunshines/gocommon/constants"
 	commonmiddleware "github.com/mysunshines/gocommon/middleware"
@@ -46,6 +52,7 @@ func (h *GrpcCommentHandler) CreateComment(ctx context.Context, req *comment.Cre
 		}, nil
 	}
 
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_CREATE, "comment", uint(c.ID), req.Content)
 	return &comment.CreateCommentResponse{
 		Code:    uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
 		Message: "success",
@@ -98,6 +105,7 @@ func (h *GrpcCommentHandler) UpdateComment(ctx context.Context, req *comment.Upd
 		}, nil
 	}
 
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_UPDATE, "comment", uint(req.CommentId), req.Content)
 	return &comment.UpdateCommentResponse{
 		Code:    uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
 		Message: "success",
@@ -110,9 +118,27 @@ func (h *GrpcCommentHandler) DeleteComment(ctx context.Context, req *comment.Del
 	if err != nil {
 		return nil, err
 	}
+	// 从 ctx 提取角色，非普通用户（管理员/编辑）即视为有权限删除评论
+	isAdmin := uint(0)
+	if roleVal, ok := commonmiddleware.GetGRPCRole(ctx); ok {
+		var role uint32
+		switch v := roleVal.(type) {
+		case float64:
+			role = uint32(v)
+		case int64:
+			role = uint32(v)
+		case uint32:
+			role = v
+		case uint:
+			role = uint32(v)
+		}
+		if role != 1 { // 1=普通用户（constants.RoleNormal）
+			isAdmin = 1
+		}
+	}
 	err = h.Svc.DeleteComment(ctx, uint(req.CommentId), &model.DeleteCommentRequest{
 		UserID:  uid,
-		IsAdmin: 0,
+		IsAdmin: isAdmin,
 	})
 
 	if err != nil {
@@ -128,6 +154,7 @@ func (h *GrpcCommentHandler) DeleteComment(ctx context.Context, req *comment.Del
 		}, nil
 	}
 
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_DELETE, "comment", uint(req.CommentId), "")
 	return &comment.DeleteCommentResponse{
 		Code:    uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
 		Message: "success",
@@ -167,6 +194,7 @@ func (h *GrpcCommentHandler) GetArticleComments(ctx context.Context, req *commen
 		Page:           uint(req.Page),
 		Size:           uint(req.PageSize),
 		IncludeReplies: req.IncludeReplies,
+		Sort:           req.Sort,
 	})
 
 	if err != nil {
@@ -216,11 +244,12 @@ func (h *GrpcCommentHandler) ReplyComment(ctx context.Context, req *comment.Repl
 			}, nil
 		}
 		return &comment.ReplyCommentResponse{
-			Code:    constants.ErrCodeInternal,
+			Code:    uint32(comment.CommentErrorCode_COMMENT_INTERNAL_ERROR),
 			Message: err.Error(),
 		}, nil
 	}
 
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_REPLY, "comment", uint(reply.ID), req.Content)
 	return &comment.ReplyCommentResponse{
 		Code:    0,
 		Message: "success",
@@ -233,7 +262,7 @@ func (h *GrpcCommentHandler) LikeComment(ctx context.Context, req *comment.LikeC
 	if err != nil {
 		return nil, err
 	}
-	likeCount, err := h.Svc.LikeComment(ctx, uint(req.CommentId), &model.LikeCommentRequest{
+	likeCount, liked, err := h.Svc.LikeComment(ctx, uint(req.CommentId), &model.LikeCommentRequest{
 		UserID: uid,
 	})
 
@@ -250,10 +279,12 @@ func (h *GrpcCommentHandler) LikeComment(ctx context.Context, req *comment.LikeC
 		}, nil
 	}
 
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_LIKE, "comment", uint(req.CommentId), "")
 	return &comment.LikeCommentResponse{
 		Code:      uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
 		Message:   "success",
 		LikeCount: uint32(likeCount),
+		Liked:     liked,
 	}, nil
 }
 
@@ -285,11 +316,11 @@ func (h *GrpcCommentHandler) GetCommentReplies(ctx context.Context, req *comment
 }
 
 func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.EnableCommentRequest) (*comment.EnableCommentResponse, error) {
-	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
-	if err != nil {
+	if err := requireGRPCAdmin(ctx); err != nil {
 		return nil, err
 	}
-	err = h.Svc.EnableComment(ctx, &model.EnableCommentRequest{
+	uid, _ := commonmiddleware.GetGRPCUserID(ctx)
+	err := h.Svc.EnableComment(ctx, &model.EnableCommentRequest{
 		UserID:    uid,
 		ArticleID: uint(req.ArticleId),
 	})
@@ -314,11 +345,11 @@ func (h *GrpcCommentHandler) EnableComment(ctx context.Context, req *comment.Ena
 }
 
 func (h *GrpcCommentHandler) DisableComment(ctx context.Context, req *comment.DisableCommentRequest) (*comment.DisableCommentResponse, error) {
-	uid, err := commonmiddleware.RequireGRPCAuth(ctx)
-	if err != nil {
+	if err := requireGRPCAdmin(ctx); err != nil {
 		return nil, err
 	}
-	err = h.Svc.DisableComment(ctx, &model.DisableCommentRequest{
+	uid, _ := commonmiddleware.GetGRPCUserID(ctx)
+	err := h.Svc.DisableComment(ctx, &model.DisableCommentRequest{
 		UserID:    uid,
 		ArticleID: uint(req.ArticleId),
 	})
@@ -340,6 +371,86 @@ func (h *GrpcCommentHandler) DisableComment(ctx context.Context, req *comment.Di
 		Code:    uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
 		Message: "success",
 	}, nil
+}
+
+// AdminListComments 管理端评论列表（仅管理员）。
+func (h *GrpcCommentHandler) AdminListComments(ctx context.Context, req *comment.AdminListCommentsRequest) (*comment.AdminListCommentsResponse, error) {
+	if err := requireGRPCAdmin(ctx); err != nil {
+		return nil, err
+	}
+	comments, total, err := h.Svc.AdminListComments(ctx, uint(req.ArticleId), uint(req.UserId), req.Keyword, int(req.Page), int(req.PageSize))
+	if err != nil {
+		return &comment.AdminListCommentsResponse{
+			Code:    uint32(comment.CommentErrorCode_COMMENT_LIST_FAILED),
+			Message: err.Error(),
+		}, nil
+	}
+	protoComments := make([]*comment.Comment, len(comments))
+	for i, c := range comments {
+		protoComments[i] = ConvertToProtoComment(c)
+	}
+	return &comment.AdminListCommentsResponse{
+		Code:     uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
+		Message:  "success",
+		Comments: protoComments,
+		Total:    uint32(total),
+	}, nil
+}
+
+// AdminDeleteComment 管理端删除评论（无视作者，仅管理员）。
+func (h *GrpcCommentHandler) AdminDeleteComment(ctx context.Context, req *comment.AdminDeleteCommentRequest) (*comment.AdminDeleteCommentResponse, error) {
+	if err := requireGRPCAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.Svc.AdminDeleteComment(ctx, uint(req.CommentId)); err != nil {
+		return &comment.AdminDeleteCommentResponse{
+			Code:    uint32(comment.CommentErrorCode_COMMENT_DELETE_FAILED),
+			Message: err.Error(),
+		}, nil
+	}
+	recordAudit(ctx, user.AuditAction_AUDIT_ACTION_COMMENT_DELETE, "comment", uint(req.CommentId), "admin delete")
+	return &comment.AdminDeleteCommentResponse{
+		Code:    uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
+		Message: "success",
+	}, nil
+}
+
+// requireGRPCAdmin 校验调用方已登录且具备管理员角色。
+// 鉴权失败直接返回 gRPC 标准错误，由 Gateway 转换为 4xx。
+func requireGRPCAdmin(ctx context.Context) error {
+	if _, err := commonmiddleware.RequireGRPCAuth(ctx); err != nil {
+		return err
+	}
+	raw, ok := commonmiddleware.GetGRPCRole(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "未认证")
+	}
+	var role uint8
+	switch v := raw.(type) {
+	case float64:
+		role = uint8(v)
+	case uint8:
+		role = v
+	case int:
+		role = uint8(v)
+	case int64:
+		role = uint8(v)
+	default:
+		return status.Error(codes.PermissionDenied, "无效的角色信息")
+	}
+	if role != constants.RoleAdmin {
+		return status.Error(codes.PermissionDenied, "需要管理员权限")
+	}
+	return nil
+}
+
+// recordAudit 上报操作审计（失败仅告警，不影响主流程）。
+func recordAudit(ctx context.Context, action user.AuditAction, targetType string, targetID uint, detail string) {
+	operatorID, _ := commonmiddleware.GetGRPCUserID(ctx)
+	operator, _ := commonmiddleware.GetGRPCUsername(ctx)
+	if err := client.RecordAudit(ctx, operatorID, operator, action, targetType, targetID, "", detail); err != nil {
+		log.Printf("[audit] comment record failed: %v", err)
+	}
 }
 
 // ConvertToProtoComment 转换为 proto 评论
