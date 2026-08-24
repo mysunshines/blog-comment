@@ -9,6 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// maxRepliesPerQuery 楼中楼回复单次加载上限：GetByArticleID 只加载"当前页主评论"
+// 线程的回复，且不超过该上限，避免热门文章整篇回复（可达数千条）一次性全量拉取
+// 造成内存与延迟放大。超过上限时截断展示，主评论分页本身不受影响。
+const maxRepliesPerQuery = 1000
+
 // CommentRepository 评论数据访问层接口
 type CommentRepository interface {
 	// 评论基础操作
@@ -352,12 +357,19 @@ func (r *commentRepository) GetByArticleID(ctx context.Context, articleID uint, 
 			rootSet[c.ID] = true
 		}
 
-		// 取出该文章下所有非主评论（reply/第 N 级回复），按 root_id 一次性取全每个楼中楼线程
+		// 只加载"当前页主评论"的回复线程（root_id 命中当前页主评论，或 parent 直接是
+		// 主评论——兼容历史 root_id 缺失数据），而不是整篇文章的所有回复，
+		// 避免热门文章回复一次性全量加载；并设单次查询上限保护极端大回复量场景。
+		rootIDs := make([]uint, 0, len(comments))
+		for _, c := range comments {
+			rootIDs = append(rootIDs, c.ID)
+		}
 		var allReplies []*model.Comment
 		r.db.WithContext(ctx).
-			Where("article_id = ? AND parent_id != 0 AND status = 1", articleID).
+			Where("article_id = ? AND parent_id != 0 AND status = 1 AND (root_id IN ? OR parent_id IN ?)", articleID, rootIDs, rootIDs).
 			Preload("User").
 			Order("created_at ASC").
+			Limit(maxRepliesPerQuery).
 			Find(&allReplies)
 
 		// 按真实 parent_id 关系构建嵌套树。
