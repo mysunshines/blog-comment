@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mysunshines/gocommon/grpcclient"
 	user "github.com/mysunshines/blog-user/proto/pb"
+	"github.com/mysunshines/gocommon/grpcclient"
 )
 
 // GetUser 按 userID 拉取用户信息（用于通知场景回填触发者昵称等）。

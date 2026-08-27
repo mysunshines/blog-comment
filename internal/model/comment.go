@@ -6,15 +6,15 @@ import (
 
 // Comment 评论模型
 type Comment struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	ArticleID  uint      `gorm:"not null;index" json:"article_id"`
-	UserID     uint      `gorm:"not null;index" json:"user_id"`
-	ParentID   uint      `gorm:"default:0;index" json:"parent_id"` // 上一级评论 ID（回复谁就指向谁，保留真实层级）
-	RootID     uint      `gorm:"default:0;index" json:"root_id"`   // 根主评论 ID（同线程所有回复共享，便于一次性取全楼中楼）
-	Content    string    `gorm:"type:text;not null" json:"content"`
-	LikeCount  uint      `gorm:"default:0" json:"like_count"`
-	ReplyCount uint      `gorm:"default:0" json:"reply_count"`
-	Status     uint      `gorm:"default:1" json:"status"` // 1=正常, 2=已删除
+	ID         uint   `gorm:"primaryKey" json:"id"`
+	ArticleID  uint   `gorm:"not null;index" json:"article_id"`
+	UserID     uint   `gorm:"not null;index" json:"user_id"`
+	ParentID   uint   `gorm:"default:0;index" json:"parent_id"` // 上一级评论 ID（回复谁就指向谁，保留真实层级）
+	RootID     uint   `gorm:"default:0;index" json:"root_id"`   // 根主评论 ID（同线程所有回复共享，便于一次性取全楼中楼）
+	Content    string `gorm:"type:text;not null" json:"content"`
+	LikeCount  uint   `gorm:"default:0" json:"like_count"`
+	ReplyCount uint   `gorm:"default:0" json:"reply_count"`
+	Status     uint   `gorm:"default:1" json:"status"` // 1=正常, 2=已删除
 
 	// 行内批注锚点（Confluence 式：选中正文片段后评论）。
 	// 采用「段落序号 + 选中片段文字 + 片段在段落内的偏移」，渲染时按段匹配高亮；
@@ -23,8 +23,8 @@ type Comment struct {
 	AnchorText     string `gorm:"size:500" json:"anchor_text"`       // 被选中的原文片段
 	AnchorOffset   int    `gorm:"default:-1" json:"anchor_offset"`   // 片段在段落内的字符偏移，-1 表示未记录
 
-	CreatedAt  time.Time `gorm:"<-:create" json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CreatedAt time.Time `gorm:"<-:create" json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// 关联
 	User    User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
