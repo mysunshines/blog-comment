@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 
+	"github.com/mysunshines/blog-comment/internal/client"
 	"github.com/mysunshines/blog-comment/internal/errors"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/repository"
+	notification "github.com/mysunshines/blog-notification/proto/pb"
 	user "github.com/mysunshines/blog-user/proto/pb"
 	"github.com/mysunshines/gocommon/grpcclient"
 	"github.com/mysunshines/gocommon/pool"
@@ -121,6 +124,14 @@ func (s *commentService) CreateComment(ctx context.Context, req *model.CreateCom
 
 	if err != nil {
 		return nil, err
+	}
+
+	// 通知文章作者收到新评论（自己评论自己的文章不打扰）
+	if article.UserID != req.UserID {
+		s.notifyUser(ctx, article.UserID, notification.NotificationType_ARTICLE_COMMENTED,
+			fmt.Sprintf("你的文章《%s》收到了新评论", article.Title),
+			truncateRunes(comment.Content, 200),
+			articleLink(article.ID), req.UserID)
 	}
 
 	// 重新获取完整评论信息
@@ -314,6 +325,21 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 		return nil, err
 	}
 
+	// 通知被回复者（自己回复自己的评论不打扰）
+	if parentComment.UserID != req.UserID {
+		s.notifyUser(ctx, parentComment.UserID, notification.NotificationType_COMMENT_REPLIED,
+			"你的评论收到了新回复",
+			truncateRunes(reply.Content, 200),
+			articleLink(parentComment.ArticleID), req.UserID)
+	}
+	// 通知文章作者（作者不是回复者、也不是被回复者时才通知，避免同一行为重复打扰）
+	if article.UserID != req.UserID && article.UserID != parentComment.UserID {
+		s.notifyUser(ctx, article.UserID, notification.NotificationType_ARTICLE_COMMENTED,
+			fmt.Sprintf("你的文章《%s》收到了新评论", article.Title),
+			truncateRunes(reply.Content, 200),
+			articleLink(article.ID), req.UserID)
+	}
+
 	return s.commentRepo.GetByID(ctx, reply.ID)
 }
 
@@ -322,9 +348,11 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 // 未点赞时调用则点赞并返回 liked=true。返回操作后的最新点赞数与点赞状态。
 func (s *commentService) LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, bool, error) {
 	// 并行：检查评论是否存在 + 检查是否已点赞（两个查询互不依赖）
+	var target *model.Comment
 	results := pool.Go(ctx,
 		func(ctx context.Context) (interface{}, error) {
-			_, err := s.commentRepo.GetByID(ctx, commentID)
+			c, err := s.commentRepo.GetByID(ctx, commentID)
+			target = c
 			return nil, err
 		},
 		func(ctx context.Context) (interface{}, error) {
@@ -372,6 +400,16 @@ func (s *commentService) LikeComment(ctx context.Context, commentID uint, req *m
 	}
 
 	liked := existingLike == nil
+
+	// 新点赞（非取消）时通知评论作者（自己赞自己不打扰）。
+	// 通知是 best-effort，失败不影响点赞结果返回。
+	if liked && target != nil && target.UserID != 0 && target.UserID != req.UserID {
+		s.notifyUser(ctx, target.UserID, notification.NotificationType_COMMENT_LIKED,
+			"你的评论收到了点赞",
+			"",
+			articleLink(target.ArticleID), req.UserID)
+	}
+
 	count, err := s.commentLikeRepo.GetLikeCount(ctx, commentID)
 	if err != nil {
 		return 0, liked, err
@@ -448,4 +486,40 @@ func (s *commentService) AdminDeleteComment(ctx context.Context, commentID uint)
 // CacheKey 生成缓存键
 func CacheKey(key string, args ...interface{}) string {
 	return fmt.Sprintf("comment_service:%s:%v", key, args)
+}
+
+// notifyUser 向指定用户发送站内消息（best-effort：失败仅打日志，不影响主流程）。
+// actorID 为触发者（评论人/点赞人），尽量拉取昵称用于展示，失败降级为"用户"；
+// userID 或 actorID 为 0 时直接跳过（0 表示系统/匿名，当前评论场景不适用）。
+func (s *commentService) notifyUser(ctx context.Context, userID uint, typ notification.NotificationType,
+	title, content, link string, actorID uint) {
+	if userID == 0 || actorID == 0 {
+		return
+	}
+	actorName := "用户"
+	if u, err := client.GetUser(ctx, actorID); err == nil && u != nil {
+		if u.Nickname != "" {
+			actorName = u.Nickname
+		} else if u.Username != "" {
+			actorName = u.Username
+		}
+	}
+	if err := client.CreateNotification(ctx, userID, typ, title, content, link, actorID, actorName); err != nil {
+		log.Printf("[notification][warn] notify user %d failed: %v", userID, err)
+	}
+}
+
+// articleLink 生成文章跳转链接（前端路由，评论服务的本地文章模型无 slug，用 id 定位）
+func articleLink(articleID uint) string {
+	return fmt.Sprintf("/article.html?id=%d", articleID)
+}
+
+// truncateRunes 按 rune 截断字符串到 max 个字符，超出部分以 … 结尾，
+// 防止评论正文超出 notification-service 的 content 长度限制（1024）。
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
 }
