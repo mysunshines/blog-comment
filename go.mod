@@ -3,8 +3,8 @@ module github.com/mysunshines/blog-comment
 go 1.25.0
 
 require (
-	github.com/mysunshines/blog-notification v1.0.0
-	github.com/mysunshines/blog-user v1.2.6
+	github.com/mysunshines/blog-notification v1.0.2
+	github.com/mysunshines/blog-user v1.4.1
 	github.com/mysunshines/gocommon v1.6.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sony/gobreaker v0.5.0
