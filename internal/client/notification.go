@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	notification "github.com/mysunshines/blog-notification/proto/pb"
+	notification "github.com/mysunshines/blog-notification/proto/pb/v1"
 	"github.com/mysunshines/gocommon/grpcclient"
 )
 

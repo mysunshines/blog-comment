@@ -11,8 +11,8 @@ import (
 	"github.com/mysunshines/blog-comment/internal/errors"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/service"
-	comment "github.com/mysunshines/blog-comment/proto/pb"
-	user "github.com/mysunshines/blog-user/proto/pb"
+	comment "github.com/mysunshines/blog-comment/proto/pb/v1"
+	user "github.com/mysunshines/blog-user/proto/pb/v1"
 
 	"github.com/mysunshines/gocommon/constants"
 	commonmiddleware "github.com/mysunshines/gocommon/middleware"

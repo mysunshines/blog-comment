@@ -9,8 +9,8 @@ import (
 	"github.com/mysunshines/blog-comment/internal/errors"
 	"github.com/mysunshines/blog-comment/internal/model"
 	"github.com/mysunshines/blog-comment/internal/repository"
-	notification "github.com/mysunshines/blog-notification/proto/pb"
-	user "github.com/mysunshines/blog-user/proto/pb"
+	notification "github.com/mysunshines/blog-notification/proto/pb/v1"
+	user "github.com/mysunshines/blog-user/proto/pb/v1"
 	"github.com/mysunshines/gocommon/grpcclient"
 	"github.com/mysunshines/gocommon/pool"
 
@@ -126,6 +126,11 @@ func (s *commentService) CreateComment(ctx context.Context, req *model.CreateCom
 		return nil, err
 	}
 
+	// 新评论 → 评论榜 +1（best-effort，失败不影响主流程）
+	if perr := client.IncrCommentScore(ctx, req.ArticleID, 1); perr != nil {
+		log.Printf("[ranking] push comment score failed article=%d: %v", req.ArticleID, perr)
+	}
+
 	// 通知文章作者收到新评论（自己评论自己的文章不打扰）
 	if article.UserID != req.UserID {
 		s.notifyUser(ctx, article.UserID, notification.NotificationType_ARTICLE_COMMENTED,
@@ -182,7 +187,7 @@ func (s *commentService) DeleteComment(ctx context.Context, id uint, req *model.
 		return errors.PermissionDenied()
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. 取出被删节点的所有直接子级（仅正常状态）
 		var children []*model.Comment
 		if err := tx.Where("parent_id = ? AND status = 1", id).Find(&children).Error; err != nil {
@@ -224,7 +229,15 @@ func (s *commentService) DeleteComment(ctx context.Context, id uint, req *model.
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// 逻辑删除成功 → 评论榜 -1（best-effort，失败不影响主流程）
+	if perr := client.IncrCommentScore(ctx, comment.ArticleID, -1); perr != nil {
+		log.Printf("[ranking] push comment score failed article=%d: %v", comment.ArticleID, perr)
+	}
+	return nil
 }
 
 // ListComments 获取用户评论列表
@@ -323,6 +336,11 @@ func (s *commentService) ReplyComment(ctx context.Context, parentID uint, req *m
 
 	if err != nil {
 		return nil, err
+	}
+
+	// 新回复 → 评论榜 +1（best-effort，失败不影响主流程）
+	if perr := client.IncrCommentScore(ctx, parentComment.ArticleID, 1); perr != nil {
+		log.Printf("[ranking] push comment score failed article=%d: %v", parentComment.ArticleID, perr)
 	}
 
 	// 通知被回复者（自己回复自己的评论不打扰）

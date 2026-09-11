@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package comment.v1;
 
-option go_package = "github.com/mysunshines/blog-comment/proto/pb";
+option go_package = "github.com/mysunshines/blog-comment/proto/pb/v1";
 
 // ============================================================================
 // gRPC Contract (source of truth for comment-service)

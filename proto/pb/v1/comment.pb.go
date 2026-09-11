@@ -4,15 +4,14 @@
 // 	protoc        v6.33.4
 // source: comment.proto
 
-package pb
+package v1
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -1993,7 +1992,7 @@ const file_comment_proto_rawDesc = "" +
 	"\rEnableComment\x12 .comment.v1.EnableCommentRequest\x1a!.comment.v1.EnableCommentResponse\x12W\n" +
 	"\x0eDisableComment\x12!.comment.v1.DisableCommentRequest\x1a\".comment.v1.DisableCommentResponse\x12`\n" +
 	"\x11AdminListComments\x12$.comment.v1.AdminListCommentsRequest\x1a%.comment.v1.AdminListCommentsResponse\x12c\n" +
-	"\x12AdminDeleteComment\x12%.comment.v1.AdminDeleteCommentRequest\x1a&.comment.v1.AdminDeleteCommentResponseB.Z,github.com/mysunshines/blog-comment/proto/pbb\x06proto3"
+	"\x12AdminDeleteComment\x12%.comment.v1.AdminDeleteCommentRequest\x1a&.comment.v1.AdminDeleteCommentResponseB1Z/github.com/mysunshines/blog-comment/proto/pb/v1b\x06proto3"
 
 var (
 	file_comment_proto_rawDescOnce sync.Once

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	user "github.com/mysunshines/blog-user/proto/pb"
+	user "github.com/mysunshines/blog-user/proto/pb/v1"
 	"github.com/mysunshines/gocommon/grpcclient"
 )
 
