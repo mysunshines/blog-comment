@@ -33,10 +33,15 @@ func (h *GrpcCommentHandler) CreateComment(ctx context.Context, req *comment.Cre
 		return nil, err
 	}
 	c, err := h.Svc.CreateComment(ctx, &model.CreateCommentRequest{
-		UserID:    uid,
-		ArticleID: uint(req.ArticleId),
-		Content:   req.Content,
-		ParentID:  uint(req.ParentId),
+		UserID:         uid,
+		ArticleID:      uint(req.ArticleId),
+		Content:        req.Content,
+		ParentID:       uint(req.ParentId),
+		ParagraphIndex: int(req.GetParagraphIndex()),
+		AnchorText:     req.GetAnchorText(),
+		AnchorOffset:   int(req.GetAnchorOffset()),
+		AnchorPrefix:   req.GetAnchorPrefix(),
+		AnchorSuffix:   req.GetAnchorSuffix(),
 	})
 
 	if err != nil {
@@ -488,5 +493,38 @@ func ConvertToProtoComment(c *model.Comment) *comment.Comment {
 		CreatedAt:  c.CreatedAt.Format(constants.DateTimeFormat),
 		UpdatedAt:  c.UpdatedAt.Format(constants.DateTimeFormat),
 		Replies:    replies,
+		// 行内批注锚点
+		ParagraphIndex: int32(c.ParagraphIndex),
+		AnchorText:     c.AnchorText,
+		AnchorOffset:   int32(c.AnchorOffset),
+		AnchorPrefix:   c.AnchorPrefix,
+		AnchorSuffix:   c.AnchorSuffix,
 	}
+}
+
+// GetArticleAnnotations 获取文章行内批注锚点（供 article-service 渲染时注入高亮标记，避免拉取整棵评论树）
+func (h *GrpcCommentHandler) GetArticleAnnotations(ctx context.Context, req *comment.GetArticleAnnotationsRequest) (*comment.GetArticleAnnotationsResponse, error) {
+	annos, err := h.Svc.GetArticleAnnotations(ctx, uint(req.ArticleId))
+	if err != nil {
+		return &comment.GetArticleAnnotationsResponse{
+			Code:    uint32(comment.CommentErrorCode_COMMENT_LIST_FAILED),
+			Message: err.Error(),
+		}, nil
+	}
+	list := make([]*comment.Annotation, 0, len(annos))
+	for _, a := range annos {
+		list = append(list, &comment.Annotation{
+			CommentId:      uint32(a.ID),
+			ParagraphIndex: int32(a.ParagraphIndex),
+			AnchorText:     a.AnchorText,
+			AnchorOffset:   int32(a.AnchorOffset),
+			AnchorPrefix:   a.AnchorPrefix,
+			AnchorSuffix:   a.AnchorSuffix,
+		})
+	}
+	return &comment.GetArticleAnnotationsResponse{
+		Code:        uint32(comment.CommentErrorCode_COMMENT_SUCCESS),
+		Message:     "success",
+		Annotations: list,
+	}, nil
 }

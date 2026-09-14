@@ -28,6 +28,7 @@ type CommentService interface {
 	ReplyComment(ctx context.Context, parentID uint, req *model.ReplyCommentRequest) (*model.Comment, error)
 	LikeComment(ctx context.Context, commentID uint, req *model.LikeCommentRequest) (uint, bool, error)
 	GetCommentReplies(ctx context.Context, req *model.GetCommentRepliesRequest) ([]*model.Comment, int64, error)
+	GetArticleAnnotations(ctx context.Context, articleID uint) ([]*model.Comment, error)
 	EnableComment(ctx context.Context, req *model.EnableCommentRequest) error
 	DisableComment(ctx context.Context, req *model.DisableCommentRequest) error
 
@@ -100,6 +101,8 @@ func (s *commentService) CreateComment(ctx context.Context, req *model.CreateCom
 		comment.ParagraphIndex = req.ParagraphIndex
 		comment.AnchorText = req.AnchorText
 		comment.AnchorOffset = req.AnchorOffset
+		comment.AnchorPrefix = req.AnchorPrefix
+		comment.AnchorSuffix = req.AnchorSuffix
 	}
 
 	// 使用事务
@@ -250,6 +253,18 @@ func (s *commentService) ListComments(ctx context.Context, req *model.ListCommen
 	}
 
 	return s.commentRepo.ListByUser(ctx, req.UserID, int(req.Page), int(req.Size))
+}
+
+// GetArticleAnnotations 获取文章的行内批注锚点（供 article-service 渲染时注入高亮标记）
+func (s *commentService) GetArticleAnnotations(ctx context.Context, articleID uint) ([]*model.Comment, error) {
+	var comments []*model.Comment
+	if err := s.db.WithContext(ctx).
+		Select("id, article_id, paragraph_index, anchor_text, anchor_offset, anchor_prefix, anchor_suffix").
+		Where("article_id = ? AND paragraph_index >= 0 AND anchor_text != '' AND status = 1", articleID).
+		Find(&comments).Error; err != nil {
+		return nil, err
+	}
+	return comments, nil
 }
 
 // GetArticleComments 获取文章评论

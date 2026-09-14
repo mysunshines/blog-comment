@@ -17,11 +17,15 @@ type Comment struct {
 	Status     uint   `gorm:"default:1" json:"status"` // 1=正常, 2=已删除
 
 	// 行内批注锚点（Confluence 式：选中正文片段后评论）。
-	// 采用「段落序号 + 选中片段文字 + 片段在段落内的偏移」，渲染时按段匹配高亮；
+	// 采用 W3C TextQuoteSelector 思路：anchor_text 为精确选中文本，
+	// anchor_prefix/anchor_suffix 为其前后上下文（增强抗漂移与消歧义），
+	// paragraph_index/anchor_offset 为兼容旧实现的辅助定位。
 	// 文章大改导致失配时回退为普通评论（anchor_text 仍展示为引用块）。
 	ParagraphIndex int    `gorm:"default:-1" json:"paragraph_index"` // 选中文字所在段落序号，-1 表示非行内批注
-	AnchorText     string `gorm:"size:500" json:"anchor_text"`       // 被选中的原文片段
+	AnchorText     string `gorm:"size:500" json:"anchor_text"`       // 被选中的精确原文片段
 	AnchorOffset   int    `gorm:"default:-1" json:"anchor_offset"`   // 片段在段落内的字符偏移，-1 表示未记录
+	AnchorPrefix   string `gorm:"size:128" json:"anchor_prefix"`     // 选中文本前的上下文（消歧义/抗漂移）
+	AnchorSuffix   string `gorm:"size:128" json:"anchor_suffix"`     // 选中文本后的上下文（消歧义/抗漂移）
 
 	CreatedAt time.Time `gorm:"<-:create" json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -85,11 +89,13 @@ type CreateCommentRequest struct {
 	Content   string `json:"content" binding:"required,min=1,max=2000"`
 	ParentID  uint   `json:"parent_id"`
 
-	// 行内批注入参（可选）：选中正文片段时一并提交，用于前端高亮渲染。
-	// 三者要么同时有效，要么都为空（空表示普通评论）。
+	// 行内批注入参（可选）：选中正文片段时一并提交，用于后端注入高亮标记。
+	// 四者要么同时有效，要么都为空（空表示普通评论）。
 	ParagraphIndex int    `json:"paragraph_index"` // 选中片段所在段落序号，-1 表示非行内批注
-	AnchorText     string `json:"anchor_text"`     // 被选中的原文片段（最多 500 字）
+	AnchorText     string `json:"anchor_text"`     // 被选中的精确原文片段（最多 500 字）
 	AnchorOffset   int    `json:"anchor_offset"`   // 片段在段落内的字符偏移，-1 表示未记录
+	AnchorPrefix   string `json:"anchor_prefix"`   // 选中文本前上下文（最多 128 字）
+	AnchorSuffix   string `json:"anchor_suffix"`   // 选中文本后上下文（最多 128 字）
 }
 
 // UpdateCommentRequest 更新评论请求

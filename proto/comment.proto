@@ -46,6 +46,8 @@ service CommentService {
     rpc DeleteComment(DeleteCommentRequest) returns (DeleteCommentResponse);
     rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
     rpc GetArticleComments(GetArticleCommentsRequest) returns (GetArticleCommentsResponse);
+    // 轻量接口：仅返回某文章的行内批注锚点（供 article-service 渲染时注入高亮标记，避免拉取整棵评论树）。
+    rpc GetArticleAnnotations(GetArticleAnnotationsRequest) returns (GetArticleAnnotationsResponse);
     rpc ReplyComment(ReplyCommentRequest) returns (ReplyCommentResponse);
     rpc LikeComment(LikeCommentRequest) returns (LikeCommentResponse);
     rpc GetCommentReplies(GetCommentRepliesRequest) returns (GetCommentRepliesResponse);
@@ -72,6 +74,15 @@ message Comment {
     string created_at = 12;
     string updated_at = 13;
     repeated Comment replies = 14;
+    // 行内批注锚点（Confluence 式：选中正文片段后评论）。
+    // 采用 W3C TextQuoteSelector 思路：anchor_text 为精确选中文本，
+    // anchor_prefix/anchor_suffix 为其前后上下文（增强抗漂移与消歧义），
+    // paragraph_index/anchor_offset 为兼容旧实现的辅助定位。
+    int32 paragraph_index = 15;
+    string anchor_text = 16;
+    int32 anchor_offset = 17;
+    string anchor_prefix = 18;
+    string anchor_suffix = 19;
 }
 
 message CreateCommentRequest {
@@ -79,6 +90,12 @@ message CreateCommentRequest {
     uint32 user_id = 2;
     string content = 3;
     uint32 parent_id = 4;
+    // 行内批注入参（可选）：选中正文片段时一并提交，用于后端注入高亮标记。
+    int32 paragraph_index = 5;
+    string anchor_text = 6;
+    int32 anchor_offset = 7;
+    string anchor_prefix = 8;
+    string anchor_suffix = 9;
 }
 
 message CreateCommentResponse {
@@ -148,6 +165,26 @@ message GetArticleCommentsResponse {
     repeated Comment comments = 3;
     uint32 total = 4;
     bool comment_enabled = 5;
+}
+
+// 行内批注锚点（轻量，供渲染注入高亮用）
+message Annotation {
+    uint32 comment_id = 1;
+    int32 paragraph_index = 2;
+    string anchor_text = 3;
+    int32 anchor_offset = 4;
+    string anchor_prefix = 5;
+    string anchor_suffix = 6;
+}
+
+message GetArticleAnnotationsRequest {
+    uint32 article_id = 1;
+}
+
+message GetArticleAnnotationsResponse {
+    uint32 code = 1;
+    string message = 2;
+    repeated Annotation annotations = 3;
 }
 
 message ReplyCommentRequest {

@@ -19,19 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CommentService_CreateComment_FullMethodName      = "/comment.v1.CommentService/CreateComment"
-	CommentService_GetComment_FullMethodName         = "/comment.v1.CommentService/GetComment"
-	CommentService_UpdateComment_FullMethodName      = "/comment.v1.CommentService/UpdateComment"
-	CommentService_DeleteComment_FullMethodName      = "/comment.v1.CommentService/DeleteComment"
-	CommentService_ListComments_FullMethodName       = "/comment.v1.CommentService/ListComments"
-	CommentService_GetArticleComments_FullMethodName = "/comment.v1.CommentService/GetArticleComments"
-	CommentService_ReplyComment_FullMethodName       = "/comment.v1.CommentService/ReplyComment"
-	CommentService_LikeComment_FullMethodName        = "/comment.v1.CommentService/LikeComment"
-	CommentService_GetCommentReplies_FullMethodName  = "/comment.v1.CommentService/GetCommentReplies"
-	CommentService_EnableComment_FullMethodName      = "/comment.v1.CommentService/EnableComment"
-	CommentService_DisableComment_FullMethodName     = "/comment.v1.CommentService/DisableComment"
-	CommentService_AdminListComments_FullMethodName  = "/comment.v1.CommentService/AdminListComments"
-	CommentService_AdminDeleteComment_FullMethodName = "/comment.v1.CommentService/AdminDeleteComment"
+	CommentService_CreateComment_FullMethodName         = "/comment.v1.CommentService/CreateComment"
+	CommentService_GetComment_FullMethodName            = "/comment.v1.CommentService/GetComment"
+	CommentService_UpdateComment_FullMethodName         = "/comment.v1.CommentService/UpdateComment"
+	CommentService_DeleteComment_FullMethodName         = "/comment.v1.CommentService/DeleteComment"
+	CommentService_ListComments_FullMethodName          = "/comment.v1.CommentService/ListComments"
+	CommentService_GetArticleComments_FullMethodName    = "/comment.v1.CommentService/GetArticleComments"
+	CommentService_GetArticleAnnotations_FullMethodName = "/comment.v1.CommentService/GetArticleAnnotations"
+	CommentService_ReplyComment_FullMethodName          = "/comment.v1.CommentService/ReplyComment"
+	CommentService_LikeComment_FullMethodName           = "/comment.v1.CommentService/LikeComment"
+	CommentService_GetCommentReplies_FullMethodName     = "/comment.v1.CommentService/GetCommentReplies"
+	CommentService_EnableComment_FullMethodName         = "/comment.v1.CommentService/EnableComment"
+	CommentService_DisableComment_FullMethodName        = "/comment.v1.CommentService/DisableComment"
+	CommentService_AdminListComments_FullMethodName     = "/comment.v1.CommentService/AdminListComments"
+	CommentService_AdminDeleteComment_FullMethodName    = "/comment.v1.CommentService/AdminDeleteComment"
 )
 
 // CommentServiceClient is the client API for CommentService service.
@@ -44,6 +45,8 @@ type CommentServiceClient interface {
 	DeleteComment(ctx context.Context, in *DeleteCommentRequest, opts ...grpc.CallOption) (*DeleteCommentResponse, error)
 	ListComments(ctx context.Context, in *ListCommentsRequest, opts ...grpc.CallOption) (*ListCommentsResponse, error)
 	GetArticleComments(ctx context.Context, in *GetArticleCommentsRequest, opts ...grpc.CallOption) (*GetArticleCommentsResponse, error)
+	// 轻量接口：仅返回某文章的行内批注锚点（供 article-service 渲染时注入高亮标记，避免拉取整棵评论树）。
+	GetArticleAnnotations(ctx context.Context, in *GetArticleAnnotationsRequest, opts ...grpc.CallOption) (*GetArticleAnnotationsResponse, error)
 	ReplyComment(ctx context.Context, in *ReplyCommentRequest, opts ...grpc.CallOption) (*ReplyCommentResponse, error)
 	LikeComment(ctx context.Context, in *LikeCommentRequest, opts ...grpc.CallOption) (*LikeCommentResponse, error)
 	GetCommentReplies(ctx context.Context, in *GetCommentRepliesRequest, opts ...grpc.CallOption) (*GetCommentRepliesResponse, error)
@@ -116,6 +119,16 @@ func (c *commentServiceClient) GetArticleComments(ctx context.Context, in *GetAr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetArticleCommentsResponse)
 	err := c.cc.Invoke(ctx, CommentService_GetArticleComments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *commentServiceClient) GetArticleAnnotations(ctx context.Context, in *GetArticleAnnotationsRequest, opts ...grpc.CallOption) (*GetArticleAnnotationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetArticleAnnotationsResponse)
+	err := c.cc.Invoke(ctx, CommentService_GetArticleAnnotations_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +215,8 @@ type CommentServiceServer interface {
 	DeleteComment(context.Context, *DeleteCommentRequest) (*DeleteCommentResponse, error)
 	ListComments(context.Context, *ListCommentsRequest) (*ListCommentsResponse, error)
 	GetArticleComments(context.Context, *GetArticleCommentsRequest) (*GetArticleCommentsResponse, error)
+	// 轻量接口：仅返回某文章的行内批注锚点（供 article-service 渲染时注入高亮标记，避免拉取整棵评论树）。
+	GetArticleAnnotations(context.Context, *GetArticleAnnotationsRequest) (*GetArticleAnnotationsResponse, error)
 	ReplyComment(context.Context, *ReplyCommentRequest) (*ReplyCommentResponse, error)
 	LikeComment(context.Context, *LikeCommentRequest) (*LikeCommentResponse, error)
 	GetCommentReplies(context.Context, *GetCommentRepliesRequest) (*GetCommentRepliesResponse, error)
@@ -237,6 +252,9 @@ func (UnimplementedCommentServiceServer) ListComments(context.Context, *ListComm
 }
 func (UnimplementedCommentServiceServer) GetArticleComments(context.Context, *GetArticleCommentsRequest) (*GetArticleCommentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetArticleComments not implemented")
+}
+func (UnimplementedCommentServiceServer) GetArticleAnnotations(context.Context, *GetArticleAnnotationsRequest) (*GetArticleAnnotationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetArticleAnnotations not implemented")
 }
 func (UnimplementedCommentServiceServer) ReplyComment(context.Context, *ReplyCommentRequest) (*ReplyCommentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReplyComment not implemented")
@@ -384,6 +402,24 @@ func _CommentService_GetArticleComments_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CommentServiceServer).GetArticleComments(ctx, req.(*GetArticleCommentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CommentService_GetArticleAnnotations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetArticleAnnotationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CommentServiceServer).GetArticleAnnotations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CommentService_GetArticleAnnotations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CommentServiceServer).GetArticleAnnotations(ctx, req.(*GetArticleAnnotationsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -544,6 +580,10 @@ var CommentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetArticleComments",
 			Handler:    _CommentService_GetArticleComments_Handler,
+		},
+		{
+			MethodName: "GetArticleAnnotations",
+			Handler:    _CommentService_GetArticleAnnotations_Handler,
 		},
 		{
 			MethodName: "ReplyComment",
