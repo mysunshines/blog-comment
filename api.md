@@ -2,8 +2,8 @@
 
 > 自动生成自 `comment.proto`（模式：proto）。
 > 网关按 `/api/v1/comment/<snake_method>` 反射代理到 gRPC 方法 `comment.v1.CommentService/<Method>`。
-> 生成时间：2026-09-11 21:16:03
-> Base URL（网关入口）：http://localhost:8080
+> 生成时间：2026-09-21 19:37:19
+> Base URL（网关入口）：http://localhost:8081
 
 ## 接口列表
 
@@ -15,6 +15,7 @@
 | `DELETE` | `/api/v1/comment/delete_comment` | 公开 |  |
 | `GET` | `/api/v1/comment/list_comments` | 公开 |  |
 | `GET` | `/api/v1/comment/get_article_comments` | 公开 |  |
+| `GET` | `/api/v1/comment/get_article_annotations` | 公开 | 轻量接口：仅返回某文章的行内批注锚点（供 article-service 渲染时注入高亮标记，避免拉取整棵评论树）。 |
 | `POST` | `/api/v1/comment/reply_comment` | 公开 |  |
 | `POST` | `/api/v1/comment/like_comment` | 公开 |  |
 | `GET` | `/api/v1/comment/get_comment_replies` | 公开 |  |
@@ -25,7 +26,7 @@
 
 ## CreateComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/create_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/create_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -43,10 +44,15 @@ Content-Type: application/json
 | `user_id` | `uint32` |  | `0` |
 | `content` | `string` |  | `""` |
 | `parent_id` | `uint32` |  | `0` |
+| `paragraph_index` | `int32` |  | `0` |
+| `anchor_text` | `string` |  | `""` |
+| `anchor_offset` | `int32` |  | `0` |
+| `anchor_prefix` | `string` |  | `""` |
+| `anchor_suffix` | `string` |  | `""` |
 
 **Body 示例**：
 ```json
-{"article_id": 0, "user_id": 0, "content": "", "parent_id": 0}
+{"article_id": 0, "user_id": 0, "content": "", "parent_id": 0, "paragraph_index": 0, "anchor_text": "", "anchor_offset": 0, "anchor_prefix": "", "anchor_suffix": ""}
 ```
 
 ### Response
@@ -63,14 +69,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/create_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/create_comment' \
   -H 'Content-Type: application/json' \
-  -d '{"article_id": 0, "user_id": 0, "content": "", "parent_id": 0}'
+  -d '{"article_id": 0, "user_id": 0, "content": "", "parent_id": 0, "paragraph_index": 0, "anchor_text": "", "anchor_offset": 0, "anchor_prefix": "", "anchor_suffix": ""}'
 ```
 
 ## GetComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/get_comment?comment_id=0`
+- **URL**: `http://localhost:8081/api/v1/comment/get_comment?comment_id=0`
 - **Method**: `GET`
 - **鉴权**: 公开（无需鉴权）
 
@@ -105,12 +111,12 @@ comment_id=0
 
 ### curl 示例
 ```bash
-curl -X GET 'http://localhost:8080/api/v1/comment/get_comment?comment_id=0'
+curl -X GET 'http://localhost:8081/api/v1/comment/get_comment?comment_id=0'
 ```
 
 ## UpdateComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/update_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/update_comment`
 - **Method**: `PUT`
 - **鉴权**: 公开（无需鉴权）
 
@@ -147,14 +153,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X PUT 'http://localhost:8080/api/v1/comment/update_comment' \
+curl -X PUT 'http://localhost:8081/api/v1/comment/update_comment' \
   -H 'Content-Type: application/json' \
   -d '{"comment_id": 0, "user_id": 0, "content": ""}'
 ```
 
 ## DeleteComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/delete_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/delete_comment`
 - **Method**: `DELETE`
 - **鉴权**: 公开（无需鉴权）
 
@@ -190,14 +196,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X DELETE 'http://localhost:8080/api/v1/comment/delete_comment' \
+curl -X DELETE 'http://localhost:8081/api/v1/comment/delete_comment' \
   -H 'Content-Type: application/json' \
   -d '{"comment_id": 0, "user_id": 0, "is_admin": 0}'
 ```
 
 ## ListComments
 
-- **URL**: `http://localhost:8080/api/v1/comment/list_comments?page=0&page_size=0&user_id=0`
+- **URL**: `http://localhost:8081/api/v1/comment/list_comments?page=0&page_size=0&user_id=0`
 - **Method**: `GET`
 - **鉴权**: 公开（无需鉴权）
 
@@ -235,12 +241,12 @@ page=0&page_size=0&user_id=0
 
 ### curl 示例
 ```bash
-curl -X GET 'http://localhost:8080/api/v1/comment/list_comments?page=0&page_size=0&user_id=0'
+curl -X GET 'http://localhost:8081/api/v1/comment/list_comments?page=0&page_size=0&user_id=0'
 ```
 
 ## GetArticleComments
 
-- **URL**: `http://localhost:8080/api/v1/comment/get_article_comments?article_id=0&page=0&page_size=0&include_replies=false&sort=<sort>`
+- **URL**: `http://localhost:8081/api/v1/comment/get_article_comments?article_id=0&page=0&page_size=0&include_replies=false&sort=<sort>`
 - **Method**: `GET`
 - **鉴权**: 公开（无需鉴权）
 
@@ -281,12 +287,52 @@ article_id=0&page=0&page_size=0&include_replies=false&sort=<sort>
 
 ### curl 示例
 ```bash
-curl -X GET 'http://localhost:8080/api/v1/comment/get_article_comments?article_id=0&page=0&page_size=0&include_replies=false&sort=<sort>'
+curl -X GET 'http://localhost:8081/api/v1/comment/get_article_comments?article_id=0&page=0&page_size=0&include_replies=false&sort=<sort>'
+```
+
+## GetArticleAnnotations
+
+- **URL**: `http://localhost:8081/api/v1/comment/get_article_annotations?article_id=0`
+- **Method**: `GET`
+- **鉴权**: 公开（无需鉴权）
+
+### Headers
+```http
+Content-Type: application/json
+```
+
+### Request
+**参数位置**：Query String
+
+| 字段 | 类型 | 说明 | 示例 |
+| --- | --- | --- | --- |
+| `article_id` | `uint32` |  | `0` |
+
+**Query 示例**：
+```json
+article_id=0
+```
+
+### Response
+| 字段 | 类型 | 说明 | 示例 |
+| --- | --- | --- | --- |
+| `code` | `uint32` |  | `0` |
+| `message` | `string` |  | `""` |
+| `annotations` | `Annotation[]` |  | [] |
+
+**Response 示例**：
+```json
+{"code": 0, "message": "success", "annotations": []}
+```
+
+### curl 示例
+```bash
+curl -X GET 'http://localhost:8081/api/v1/comment/get_article_annotations?article_id=0'
 ```
 
 ## ReplyComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/reply_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/reply_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -323,14 +369,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/reply_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/reply_comment' \
   -H 'Content-Type: application/json' \
   -d '{"comment_id": 0, "user_id": 0, "content": ""}'
 ```
 
 ## LikeComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/like_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/like_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -367,14 +413,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/like_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/like_comment' \
   -H 'Content-Type: application/json' \
   -d '{"comment_id": 0, "user_id": 0}'
 ```
 
 ## GetCommentReplies
 
-- **URL**: `http://localhost:8080/api/v1/comment/get_comment_replies?comment_id=0&page=0&page_size=0`
+- **URL**: `http://localhost:8081/api/v1/comment/get_comment_replies?comment_id=0&page=0&page_size=0`
 - **Method**: `GET`
 - **鉴权**: 公开（无需鉴权）
 
@@ -412,12 +458,12 @@ comment_id=0&page=0&page_size=0
 
 ### curl 示例
 ```bash
-curl -X GET 'http://localhost:8080/api/v1/comment/get_comment_replies?comment_id=0&page=0&page_size=0'
+curl -X GET 'http://localhost:8081/api/v1/comment/get_comment_replies?comment_id=0&page=0&page_size=0'
 ```
 
 ## EnableComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/enable_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/enable_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -452,14 +498,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/enable_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/enable_comment' \
   -H 'Content-Type: application/json' \
   -d '{"article_id": 0, "user_id": 0}'
 ```
 
 ## DisableComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/disable_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/disable_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -494,14 +540,14 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/disable_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/disable_comment' \
   -H 'Content-Type: application/json' \
   -d '{"article_id": 0, "user_id": 0}'
 ```
 
 ## AdminListComments
 
-- **URL**: `http://localhost:8080/api/v1/comment/admin_list_comments`
+- **URL**: `http://localhost:8081/api/v1/comment/admin_list_comments`
 - **Method**: `POST`
 - **鉴权**: 管理员（需 JWT + 管理员角色）
 
@@ -542,7 +588,7 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/admin_list_comments' \
+curl -X POST 'http://localhost:8081/api/v1/comment/admin_list_comments' \
   -H 'Authorization: Bearer <token>' \
   -H 'Content-Type: application/json' \
   -d '{"page": 0, "page_size": 0, "article_id": 0, "user_id": 0, "keyword": ""}'
@@ -550,7 +596,7 @@ curl -X POST 'http://localhost:8080/api/v1/comment/admin_list_comments' \
 
 ## AdminDeleteComment
 
-- **URL**: `http://localhost:8080/api/v1/comment/admin_delete_comment`
+- **URL**: `http://localhost:8081/api/v1/comment/admin_delete_comment`
 - **Method**: `POST`
 - **鉴权**: 公开（无需鉴权）
 
@@ -584,7 +630,7 @@ Content-Type: application/json
 
 ### curl 示例
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/comment/admin_delete_comment' \
+curl -X POST 'http://localhost:8081/api/v1/comment/admin_delete_comment' \
   -H 'Content-Type: application/json' \
   -d '{"comment_id": 0}'
 ```
@@ -613,4 +659,20 @@ curl -X POST 'http://localhost:8080/api/v1/comment/admin_delete_comment' \
 | `created_at` | `string` |  | `""` |
 | `updated_at` | `string` |  | `""` |
 | `replies` | `Comment[]` |  | [] |
+| `paragraph_index` | `int32` |  | `0` |
+| `anchor_text` | `string` |  | `""` |
+| `anchor_offset` | `int32` |  | `0` |
+| `anchor_prefix` | `string` |  | `""` |
+| `anchor_suffix` | `string` |  | `""` |
+
+### Annotation
+
+| 字段 | 类型 | 说明 | 示例 |
+| --- | --- | --- | --- |
+| `comment_id` | `uint32` |  | `0` |
+| `paragraph_index` | `int32` |  | `0` |
+| `anchor_text` | `string` |  | `""` |
+| `anchor_offset` | `int32` |  | `0` |
+| `anchor_prefix` | `string` |  | `""` |
+| `anchor_suffix` | `string` |  | `""` |
 
